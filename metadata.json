@@ -1,0 +1,8 @@
+{
+  "name": "Zero Hub - Zero Media Work Management",
+  "description": "Internal creative production, client portal, approval workflow, and work management system for Zero Media.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
