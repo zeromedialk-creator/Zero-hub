@@ -101,6 +101,11 @@ export const CopyEditorDashboard: React.FC<CopyEditorDashboardProps> = ({
                   <div className="text-[11px] text-neutral-400 mt-0.5 truncate">
                     {client?.company_name} · {item.platform} · {item.content_type.replace('_', ' ')}
                   </div>
+                  {item.status === 'changes_requested' && item.notes && (
+                    <div className="text-[11px] text-rose-300 line-clamp-1 italic mt-1 font-medium bg-rose-950/30 px-2 py-0.5 rounded border border-rose-900/40">
+                      ⚠️ Client Feedback: "{item.notes}"
+                    </div>
+                  )}
                   {item.caption && (
                     <div className="text-[11px] text-neutral-500 line-clamp-1 italic mt-1">
                       "{item.caption}"

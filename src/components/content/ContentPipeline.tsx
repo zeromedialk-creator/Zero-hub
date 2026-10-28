@@ -3,6 +3,7 @@ import { useData } from '../../context/DataContext';
 import { useAuth } from '../../context/AuthContext';
 import { ContentItem, ContentStatus, ContentType, Platform } from '../../types/database';
 import { StatusBadge } from '../common/StatusBadge';
+import { PlatformBadge, PlatformListBadges, formatPlatformName } from '../common/PlatformBadge';
 import {
   Film,
   Plus,
@@ -17,11 +18,13 @@ import {
   AlertCircle,
   Instagram,
   Video,
+  X,
+  Layers,
 } from 'lucide-react';
 
 interface ContentPipelineProps {
   onSelectContent: (id: string) => void;
-  onOpenCreateModal: () => void;
+  onOpenCreateModal: (defaultStatus?: ContentStatus) => void;
   onOpenReviewModal: (id: string) => void;
   onOpenVersionModal: (id: string) => void;
 }
@@ -46,7 +49,7 @@ export const ContentPipeline: React.FC<ContentPipelineProps> = ({
   onOpenReviewModal,
   onOpenVersionModal,
 }) => {
-  const { filteredContentItems, filteredClients, filteredProjects, profiles, updateContentStatus } = useData();
+  const { filteredContentItems, filteredClients, filteredProjects, profiles, approvals, contentVersions, updateContentStatus } = useData();
   const { role } = useAuth();
 
   const [viewMode, setViewMode] = useState<'kanban' | 'table'>('kanban');
@@ -54,11 +57,20 @@ export const ContentPipeline: React.FC<ContentPipelineProps> = ({
   const [selectedPlatform, setSelectedPlatform] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [mobileActiveStage, setMobileActiveStage] = useState<string>('all');
+  const [dismissedFeedbackIds, setDismissedFeedbackIds] = useState<Set<string>>(new Set());
+
+  const handleDismissFeedback = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setDismissedFeedbackIds((prev) => new Set(prev).add(id));
+  };
 
   // Filter content
   const items = filteredContentItems.filter((item) => {
     if (selectedClient !== 'all' && item.client_id !== selectedClient) return false;
-    if (selectedPlatform !== 'all' && item.platform !== selectedPlatform) return false;
+    if (selectedPlatform !== 'all') {
+      const plats = (item.platforms && item.platforms.length > 0) ? item.platforms : [item.platform];
+      if (!plats.includes(selectedPlatform as Platform)) return false;
+    }
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
       return (
@@ -106,7 +118,7 @@ export const ContentPipeline: React.FC<ContentPipelineProps> = ({
 
           {role !== 'client' && role !== 'viewer' && (
             <button
-              onClick={onOpenCreateModal}
+              onClick={() => onOpenCreateModal('idea')}
               className="inline-flex items-center gap-1.5 rounded-lg bg-amber-400 px-3.5 py-2 text-xs font-semibold text-neutral-950 hover:bg-amber-300 transition-colors whitespace-nowrap"
             >
               <Plus className="h-4 w-4" />
@@ -171,11 +183,11 @@ export const ContentPipeline: React.FC<ContentPipelineProps> = ({
           </p>
           {role !== 'client' && role !== 'viewer' && (
             <button
-              onClick={onOpenCreateModal}
+              onClick={() => onOpenCreateModal('idea')}
               className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-amber-400 px-3.5 py-1.5 text-xs font-semibold text-neutral-950 hover:bg-amber-300 transition-colors"
             >
               <Plus className="h-3.5 w-3.5" />
-              <span>Create First Deliverable</span>
+              <span>Create First Deliverable (Idea)</span>
             </button>
           )}
         </div>
@@ -255,9 +267,21 @@ export const ContentPipeline: React.FC<ContentPipelineProps> = ({
                       <div className="text-xs font-semibold text-neutral-200">{step.label}</div>
                       <div className="text-[10px] text-neutral-500">{step.desc}</div>
                     </div>
-                    <span className="font-mono text-xs tabular-nums rounded bg-neutral-800 px-2 py-0.5 text-neutral-300 font-medium">
-                      {stepItems.length}
-                    </span>
+                    <div className="flex items-center gap-1.5">
+                      <span className="font-mono text-xs tabular-nums rounded bg-neutral-800 px-2 py-0.5 text-neutral-300 font-medium">
+                        {stepItems.length}
+                      </span>
+                      {role !== 'client' && role !== 'viewer' && (
+                        <button
+                          type="button"
+                          onClick={() => onOpenCreateModal(step.status)}
+                          title={`Add deliverable to ${step.label}`}
+                          className="flex h-5 w-5 items-center justify-center rounded text-neutral-400 hover:text-amber-300 hover:bg-neutral-800 transition-colors"
+                        >
+                          <Plus className="h-3.5 w-3.5" />
+                        </button>
+                      )}
+                    </div>
                   </div>
 
                   {/* Cards in Column */}
@@ -270,32 +294,27 @@ export const ContentPipeline: React.FC<ContentPipelineProps> = ({
                       stepItems.map((item) => {
                         const client = filteredClients.find((c) => c.id === item.client_id);
                         const assigned = profiles.find((p) => p.id === item.assigned_to);
+                        const itemVersions = contentVersions.filter((v) => v.content_id === item.id);
+                        const latestVer = itemVersions.sort((a, b) => b.version_number - a.version_number)[0];
 
                         return (
                           <div
                             key={item.id}
                             className="rounded-lg border border-neutral-800 bg-neutral-950 p-3.5 space-y-2.5 hover:border-neutral-700 transition-colors shadow-xs group"
                           >
-                            <div className="flex items-center justify-between text-[10px] text-neutral-500 uppercase tracking-wider">
-                              <span className="font-medium text-amber-400/90">{item.platform}</span>
-                              <span className="capitalize">{item.content_type.replace('_', ' ')}</span>
+                            <div className="flex items-center justify-between text-[10px] text-neutral-500 uppercase tracking-wider gap-1">
+                              <div className="flex items-center gap-1.5 min-w-0">
+                                <PlatformListBadges platforms={item.platforms} platform={item.platform} maxDisplay={2} />
+                                {latestVer && (
+                                  <span className="rounded bg-amber-400/15 border border-amber-400/30 px-1 py-0.2 font-mono text-[9px] font-bold text-amber-300 shrink-0">
+                                    V{latestVer.version_number}
+                                  </span>
+                                )}
+                              </div>
+                              <span className="capitalize shrink-0 text-neutral-400">{item.content_type.replace('_', ' ')}</span>
                             </div>
 
-                            {/* Card thumbnail if available */}
-                            {item.thumbnail_url && (
-                              <div
-                                onClick={() => onSelectContent(item.id)}
-                                className="aspect-video w-full rounded-md overflow-hidden bg-neutral-900 cursor-pointer relative"
-                              >
-                                <img
-                                  src={item.thumbnail_url}
-                                  alt={item.title}
-                                  referrerPolicy="no-referrer"
-                                  className="h-full w-full object-cover group-hover:scale-105 transition-transform duration-300"
-                                />
-                              </div>
-                            )}
-
+                            {/* Content Name / Title */}
                             <h3
                               onClick={() => onSelectContent(item.id)}
                               className="text-xs font-semibold text-neutral-200 hover:text-amber-300 cursor-pointer leading-snug line-clamp-2"
@@ -307,6 +326,27 @@ export const ContentPipeline: React.FC<ContentPipelineProps> = ({
                               {client?.company_name}
                             </div>
 
+                            {item.status === 'changes_requested' && !dismissedFeedbackIds.has(item.id) && (
+                              <div className="rounded bg-rose-950/40 border border-rose-900/40 p-2 text-[10px] text-rose-200 relative group/msg">
+                                <div className="flex items-center justify-between mb-0.5">
+                                  <span className="font-bold text-rose-400 uppercase tracking-wider block">
+                                    Client Feedback:
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={(e) => handleDismissFeedback(item.id, e)}
+                                    className="rounded p-0.5 text-rose-400 hover:text-white hover:bg-rose-900/50 transition-colors"
+                                    title="Close message"
+                                  >
+                                    <X className="h-3 w-3" />
+                                  </button>
+                                </div>
+                                <p className="line-clamp-2 italic">
+                                  "{approvals.find((a) => a.content_id === item.id && a.status === 'changes_requested')?.comment || item.notes || 'Revisions requested'}"
+                                </p>
+                              </div>
+                            )}
+
                             <div className="flex items-center justify-between pt-2 border-t border-neutral-800/70 text-[10px] text-neutral-500">
                               <span>Due {item.due_date}</span>
                               <span>{assigned?.full_name?.split(' ')[0] || 'Unassigned'}</span>
@@ -314,13 +354,21 @@ export const ContentPipeline: React.FC<ContentPipelineProps> = ({
 
                             {/* Interactive Quick Actions */}
                             <div className="flex items-center justify-between pt-1 gap-2 text-[11px]">
-                              {item.status === 'client_review' ? (
+                              {role === 'client' && item.status === 'client_review' ? (
                                 <button
                                   onClick={() => onOpenReviewModal(item.id)}
                                   className="w-full inline-flex items-center justify-center gap-1.5 rounded-md bg-amber-400/15 text-amber-300 border border-amber-400/40 px-2.5 py-1.5 text-xs font-medium hover:bg-amber-400 hover:text-neutral-950 transition-colors min-h-[36px]"
                                 >
                                   <Eye className="h-3.5 w-3.5" />
-                                  <span>Client Review</span>
+                                  <span>Review & Sign-Off</span>
+                                </button>
+                              ) : role === 'client' && item.status === 'changes_requested' ? (
+                                <button
+                                  onClick={() => onOpenReviewModal(item.id)}
+                                  className="w-full inline-flex items-center justify-center gap-1.5 rounded-md bg-rose-500/15 text-rose-300 hover:bg-rose-500/25 border border-rose-500/30 transition-colors text-xs font-medium min-h-[36px]"
+                                >
+                                  <Eye className="h-3.5 w-3.5" />
+                                  <span>Review Desk</span>
                                 </button>
                               ) : (
                                 <>
@@ -341,6 +389,123 @@ export const ContentPipeline: React.FC<ContentPipelineProps> = ({
                                 </>
                               )}
                             </div>
+
+                            {role !== 'client' && role !== 'viewer' && (
+                              <div className="pt-1.5">
+                                {item.status === 'idea' && (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      updateContentStatus(item.id, 'planned', 'Promoted from Idea to Planned sprint');
+                                    }}
+                                    className="w-full inline-flex items-center justify-center gap-1.5 rounded-md bg-amber-400/15 text-amber-300 border border-amber-400/30 px-2 py-1 text-[11px] font-semibold hover:bg-amber-400 hover:text-neutral-950 transition-colors"
+                                    title="Move deliverable to Planned sprint stage"
+                                  >
+                                    <span>Promote to Planned Sprint</span>
+                                    <ArrowRight className="h-3 w-3" />
+                                  </button>
+                                )}
+                                {item.status === 'planned' && (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      updateContentStatus(item.id, 'in_production', 'Started production');
+                                    }}
+                                    className="w-full inline-flex items-center justify-center gap-1.5 rounded-md bg-sky-500/15 text-sky-300 border border-sky-500/30 px-2 py-1 text-[11px] font-semibold hover:bg-sky-500 hover:text-neutral-950 transition-colors"
+                                    title="Move deliverable to In Production stage"
+                                  >
+                                    <span>Start Production</span>
+                                    <ArrowRight className="h-3 w-3" />
+                                  </button>
+                                )}
+                                {item.status === 'assigned' && (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      updateContentStatus(item.id, 'in_production', 'Started production');
+                                    }}
+                                    className="w-full inline-flex items-center justify-center gap-1.5 rounded-md bg-sky-500/15 text-sky-300 border border-sky-500/30 px-2 py-1 text-[11px] font-semibold hover:bg-sky-500 hover:text-neutral-950 transition-colors"
+                                    title="Move deliverable to In Production stage"
+                                  >
+                                    <span>Start Production</span>
+                                    <ArrowRight className="h-3 w-3" />
+                                  </button>
+                                )}
+                                {item.status === 'in_production' && (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      updateContentStatus(item.id, 'internal_review', 'Sent for internal review');
+                                    }}
+                                    className="w-full inline-flex items-center justify-center gap-1.5 rounded-md bg-indigo-500/15 text-indigo-300 border border-indigo-500/30 px-2 py-1 text-[11px] font-semibold hover:bg-indigo-500 hover:text-neutral-950 transition-colors"
+                                    title="Move to Internal Review"
+                                  >
+                                    <span>Submit for Internal QA</span>
+                                    <ArrowRight className="h-3 w-3" />
+                                  </button>
+                                )}
+                                {item.status === 'internal_review' && (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      updateContentStatus(item.id, 'client_review', 'Submitted for client sign-off');
+                                    }}
+                                    className="w-full inline-flex items-center justify-center gap-1.5 rounded-md bg-amber-400/15 text-amber-300 border border-amber-400/30 px-2 py-1 text-[11px] font-semibold hover:bg-amber-400 hover:text-neutral-950 transition-colors"
+                                    title="Send to Client Review"
+                                  >
+                                    <span>Send to Client Review</span>
+                                    <ArrowRight className="h-3 w-3" />
+                                  </button>
+                                )}
+                                {item.status === 'approved' && (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      updateContentStatus(item.id, 'scheduled', 'Queued in scheduler');
+                                    }}
+                                    className="w-full inline-flex items-center justify-center gap-1.5 rounded-md bg-teal-500/15 text-teal-300 border border-teal-500/30 px-2 py-1 text-[11px] font-semibold hover:bg-teal-500 hover:text-neutral-950 transition-colors"
+                                    title="Queue in scheduler"
+                                  >
+                                    <span>Queue Scheduled</span>
+                                    <ArrowRight className="h-3 w-3" />
+                                  </button>
+                                )}
+                                {item.status === 'scheduled' && (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      updateContentStatus(item.id, 'published', 'Marked published');
+                                    }}
+                                    className="w-full inline-flex items-center justify-center gap-1.5 rounded-md bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 px-2 py-1 text-[11px] font-semibold hover:bg-emerald-500 hover:text-neutral-950 transition-colors"
+                                    title="Confirm published"
+                                  >
+                                    <span>Mark Published</span>
+                                    <ArrowRight className="h-3 w-3" />
+                                  </button>
+                                )}
+                                {item.status === 'published' && (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      updateContentStatus(item.id, 'completed', 'Completed and archived deliverable');
+                                    }}
+                                    className="w-full inline-flex items-center justify-center gap-1.5 rounded-md bg-neutral-900 text-neutral-300 border border-neutral-700/80 px-2 py-1 text-[11px] font-semibold hover:bg-neutral-800 hover:text-white transition-colors"
+                                    title="Archive deliverable"
+                                  >
+                                    <span>Complete & Archive</span>
+                                    <CheckCircle2 className="h-3 w-3 text-emerald-400" />
+                                  </button>
+                                )}
+                              </div>
+                            )}
                           </div>
                         );
                       })
@@ -375,11 +540,29 @@ export const ContentPipeline: React.FC<ContentPipelineProps> = ({
                         >
                           {item.title}
                         </button>
-                        <div className="text-[11px] text-neutral-400 mt-0.5 truncate">
-                          {client?.company_name} · <span className="capitalize">{item.platform}</span> · <span className="capitalize">{item.content_type.replace('_', ' ')}</span>
+                        <div className="text-[11px] text-neutral-400 mt-1 flex items-center gap-1.5 flex-wrap">
+                          <span>{client?.company_name}</span>
+                          <span>·</span>
+                          <PlatformListBadges platforms={item.platforms} platform={item.platform} maxDisplay={2} />
+                          <span>·</span>
+                          <span className="capitalize">{item.content_type.replace('_', ' ')}</span>
                         </div>
                       </div>
-                      <StatusBadge status={item.status} />
+                      {role !== 'client' ? (
+                        <select
+                          value={item.status}
+                          onChange={(e) => updateContentStatus(item.id, e.target.value as ContentStatus)}
+                          className="rounded border border-neutral-800 bg-neutral-900 px-2 py-0.5 text-[11px] text-neutral-200 focus:border-amber-400 focus:outline-hidden font-medium shrink-0"
+                        >
+                          {WORKFLOW_STEPS.map((s) => (
+                            <option key={s.status} value={s.status}>
+                              {s.label}
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        <StatusBadge status={item.status} />
+                      )}
                     </div>
 
                     <div className="flex items-center justify-between text-[11px] text-neutral-500 pt-1 border-t border-neutral-800/60">
@@ -388,13 +571,17 @@ export const ContentPipeline: React.FC<ContentPipelineProps> = ({
                     </div>
 
                     <div className="flex items-center justify-end gap-2 pt-1">
-                      {item.status === 'client_review' ? (
+                      {role === 'client' && (item.status === 'client_review' || item.status === 'changes_requested') ? (
                         <button
                           onClick={() => onOpenReviewModal(item.id)}
-                          className="w-full inline-flex items-center justify-center gap-1.5 rounded-lg bg-amber-400 px-3 py-2 text-xs font-semibold text-neutral-950 hover:bg-amber-300"
+                          className={`w-full inline-flex items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold transition-colors ${
+                            item.status === 'changes_requested'
+                              ? 'bg-rose-500 text-white hover:bg-rose-600'
+                              : 'bg-amber-400 text-neutral-950 hover:bg-amber-300'
+                          }`}
                         >
                           <Eye className="h-3.5 w-3.5" />
-                          <span>Review & Decide</span>
+                          <span>{item.status === 'changes_requested' ? 'Sign-Off / Revision Desk' : 'Review & Decide'}</span>
                         </button>
                       ) : (
                         <>
@@ -446,36 +633,65 @@ export const ContentPipeline: React.FC<ContentPipelineProps> = ({
                   items.map((item) => {
                     const client = filteredClients.find((c) => c.id === item.client_id);
                     const assigned = profiles.find((p) => p.id === item.assigned_to);
+                    const itemVersions = contentVersions.filter((v) => v.content_id === item.id);
+                    const latestVer = itemVersions.sort((a, b) => b.version_number - a.version_number)[0];
 
                     return (
                       <tr key={item.id} className="hover:bg-neutral-800/40 transition-colors">
                         <td className="px-4 py-3">
-                          <button
-                            onClick={() => onSelectContent(item.id)}
-                            className="text-left font-semibold text-neutral-200 hover:text-amber-300 transition-colors"
-                          >
-                            {item.title}
-                          </button>
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={() => onSelectContent(item.id)}
+                              className="text-left font-semibold text-neutral-200 hover:text-amber-300 transition-colors"
+                            >
+                              {item.title}
+                            </button>
+                            {latestVer && (
+                              <span className="rounded bg-amber-400/15 border border-amber-400/30 px-1.5 py-0.2 font-mono text-[9px] font-bold text-amber-300">
+                                V{latestVer.version_number}
+                              </span>
+                            )}
+                          </div>
                           <div className="text-[10px] text-neutral-500 capitalize">
                             {item.content_type.replace('_', ' ')}
                           </div>
                         </td>
                         <td className="px-4 py-3 text-neutral-300">{client?.company_name}</td>
-                        <td className="px-4 py-3 capitalize text-neutral-400">{item.platform}</td>
                         <td className="px-4 py-3">
-                          <StatusBadge status={item.status} />
+                          <PlatformListBadges platforms={item.platforms} platform={item.platform} maxDisplay={3} />
+                        </td>
+                        <td className="px-4 py-3">
+                          {role !== 'client' ? (
+                            <select
+                              value={item.status}
+                              onChange={(e) => updateContentStatus(item.id, e.target.value as ContentStatus)}
+                              className="rounded border border-neutral-800 bg-neutral-950 px-2 py-1 text-xs text-neutral-200 focus:border-amber-400 focus:outline-hidden font-medium"
+                            >
+                              {WORKFLOW_STEPS.map((s) => (
+                                <option key={s.status} value={s.status}>
+                                  {s.label}
+                                </option>
+                              ))}
+                            </select>
+                          ) : (
+                            <StatusBadge status={item.status} />
+                          )}
                         </td>
                         <td className="px-4 py-3 text-neutral-400">{assigned?.full_name || 'Unassigned'}</td>
                         <td className="px-4 py-3 text-right font-mono text-neutral-400 tabular-nums">
                           {item.due_date}
                         </td>
                         <td className="px-4 py-3 text-right">
-                          {item.status === 'client_review' ? (
+                          {role === 'client' && (item.status === 'client_review' || item.status === 'changes_requested') ? (
                             <button
                               onClick={() => onOpenReviewModal(item.id)}
-                              className="rounded bg-amber-400 px-2.5 py-1 text-[11px] font-semibold text-neutral-950 hover:bg-amber-300"
+                              className={`rounded px-2.5 py-1 text-[11px] font-semibold transition-colors ${
+                                item.status === 'changes_requested'
+                                  ? 'bg-rose-500 text-white hover:bg-rose-400'
+                                  : 'bg-amber-400 text-neutral-950 hover:bg-amber-300'
+                              }`}
                             >
-                              Review
+                              {item.status === 'changes_requested' ? 'Sign-Off' : 'Review'}
                             </button>
                           ) : (
                             <button

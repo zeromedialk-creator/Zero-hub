@@ -29,6 +29,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   const activeClients = clients.filter((c) => c.status === 'active').length;
   const activeProjects = projects.filter((p) => p.status === 'active').length;
+  const ideasContent = contentItems.filter((c) => c.status === 'idea').length;
+  const plannedContent = contentItems.filter((c) => c.status === 'planned').length;
   const inProductionContent = contentItems.filter((c) => c.status === 'in_production').length;
   const internalReviewContent = contentItems.filter((c) => c.status === 'internal_review').length;
   const clientReviewContent = contentItems.filter((c) => c.status === 'client_review').length;
@@ -126,22 +128,31 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           <span>Creative Production Breakdown</span>
           <span className="text-[11px] font-mono text-neutral-500">{contentItems.length} Total Deliverables</span>
         </div>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 text-xs">
+          <div className="border-l-2 border-amber-400 pl-3 py-1 bg-neutral-950/40 rounded-r-lg">
+            <div className="text-neutral-400 text-[11px]">Idea & Planned</div>
+            <div className="font-mono text-lg font-bold text-amber-300 tabular-nums">{ideasContent + plannedContent}</div>
+            <div className="text-[10px] text-neutral-500">{ideasContent} ideas · {plannedContent} sprint</div>
+          </div>
           <div className="border-l-2 border-sky-500 pl-3 py-1 bg-neutral-950/40 rounded-r-lg">
             <div className="text-neutral-400 text-[11px]">In Production</div>
             <div className="font-mono text-lg font-bold text-sky-400 tabular-nums">{inProductionContent}</div>
+            <div className="text-[10px] text-neutral-500">Active filming/edit</div>
           </div>
           <div className="border-l-2 border-indigo-500 pl-3 py-1 bg-neutral-950/40 rounded-r-lg">
             <div className="text-neutral-400 text-[11px]">Internal Review</div>
             <div className="font-mono text-lg font-bold text-indigo-400 tabular-nums">{internalReviewContent}</div>
+            <div className="text-[10px] text-neutral-500">Agency QA</div>
           </div>
           <div className="border-l-2 border-amber-500 pl-3 py-1 bg-neutral-950/40 rounded-r-lg">
             <div className="text-neutral-400 text-[11px]">Client Review</div>
             <div className="font-mono text-lg font-bold text-amber-400 tabular-nums">{clientReviewContent}</div>
+            <div className="text-[10px] text-neutral-500">Client sign-off</div>
           </div>
           <div className="border-l-2 border-emerald-500 pl-3 py-1 bg-neutral-950/40 rounded-r-lg">
             <div className="text-neutral-400 text-[11px]">Approved & Done</div>
             <div className="font-mono text-lg font-bold text-emerald-400 tabular-nums">{completedContent}</div>
+            <div className="text-[10px] text-neutral-500">Live & archived</div>
           </div>
         </div>
       </div>
@@ -212,24 +223,30 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           </div>
 
           <div className="space-y-3">
-            {activityLogs.slice(0, 5).map((log) => {
-              const user = profiles.find((p) => p.id === log.user_id);
-              return (
-                <div key={log.id} className="flex items-start gap-3 text-xs border-b border-neutral-800/40 pb-2.5 last:border-none">
-                  <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-neutral-800 text-[10px] font-semibold text-neutral-300">
-                    {user?.full_name?.charAt(0) || 'A'}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-neutral-200 font-medium">
-                      {user?.full_name}: <span className="text-neutral-400 font-normal">{log.action}</span>
+            {activityLogs.length === 0 ? (
+              <div className="py-6 text-center text-xs text-neutral-500">
+                No activity logged yet.
+              </div>
+            ) : (
+              activityLogs.slice(0, 5).map((log) => {
+                const user = profiles.find((p) => p.id === log.user_id);
+                return (
+                  <div key={log.id} className="flex items-start gap-3 text-xs border-b border-neutral-800/40 pb-2.5 last:border-none">
+                    <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-neutral-800 text-[10px] font-semibold text-neutral-300">
+                      {user?.full_name?.charAt(0) || 'A'}
                     </div>
-                    <div className="text-[10px] font-mono text-neutral-500 mt-0.5">
-                      {new Date(log.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    <div className="flex-1 min-w-0">
+                      <div className="text-neutral-200 font-medium">
+                        {user?.full_name}: <span className="text-neutral-400 font-normal">{log.action}</span>
+                      </div>
+                      <div className="text-[10px] font-mono text-neutral-500 mt-0.5">
+                        {new Date(log.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </div>
                     </div>
                   </div>
-                </div>
-              );
-            })}
+                );
+              })
+            )}
           </div>
         </div>
       </div>
@@ -251,39 +268,45 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {profiles.filter(p => p.role !== 'client' && p.role !== 'viewer').map((member) => {
-            const memberTasks = tasks.filter((t) => t.assigned_to === member.id && t.status !== 'completed');
-            const memberContent = contentItems.filter((c) => c.assigned_to === member.id && c.status !== 'completed');
+          {profiles.filter((p) => p.role !== 'client' && p.role !== 'viewer').length === 0 ? (
+            <div className="col-span-full py-8 text-center text-xs text-neutral-500 border border-dashed border-neutral-800 rounded-lg">
+              No active internal team members registered. Add team members in Admin Settings.
+            </div>
+          ) : (
+            profiles.filter((p) => p.role !== 'client' && p.role !== 'viewer').map((member) => {
+              const memberTasks = tasks.filter((t) => t.assigned_to === member.id && t.status !== 'completed');
+              const memberContent = contentItems.filter((c) => c.assigned_to === member.id && c.status !== 'completed');
 
-            return (
-              <div key={member.id} className="p-3.5 rounded-lg border border-neutral-800 bg-neutral-950/40">
-                <div className="flex items-center gap-3">
-                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-amber-500/10 text-amber-400 font-semibold text-xs border border-amber-500/20">
-                    {member.full_name.charAt(0)}
+              return (
+                <div key={member.id} className="p-3.5 rounded-lg border border-neutral-800 bg-neutral-950/40">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-8 w-8 items-center justify-center rounded-full bg-amber-500/10 text-amber-400 font-semibold text-xs border border-amber-500/20">
+                      {member.full_name.charAt(0)}
+                    </div>
+                    <div>
+                      <div className="text-xs font-semibold text-neutral-200">{member.full_name}</div>
+                      <div className="text-[10px] text-neutral-400">{member.job_title}</div>
+                    </div>
                   </div>
-                  <div>
-                    <div className="text-xs font-semibold text-neutral-200">{member.full_name}</div>
-                    <div className="text-[10px] text-neutral-400">{member.job_title}</div>
+
+                  <div className="mt-3 grid grid-cols-2 gap-2 text-center text-xs">
+                    <div className="rounded border border-neutral-800 bg-neutral-900/60 p-1.5">
+                      <div className="font-mono text-sm font-bold text-neutral-200 tabular-nums">
+                        {memberTasks.length}
+                      </div>
+                      <div className="text-[10px] text-neutral-500">Active Tasks</div>
+                    </div>
+                    <div className="rounded border border-neutral-800 bg-neutral-900/60 p-1.5">
+                      <div className="font-mono text-sm font-bold text-amber-400 tabular-nums">
+                        {memberContent.length}
+                      </div>
+                      <div className="text-[10px] text-neutral-500">Deliverables</div>
+                    </div>
                   </div>
                 </div>
-
-                <div className="mt-3 grid grid-cols-2 gap-2 text-center text-xs">
-                  <div className="rounded border border-neutral-800 bg-neutral-900/60 p-1.5">
-                    <div className="font-mono text-sm font-bold text-neutral-200 tabular-nums">
-                      {memberTasks.length}
-                    </div>
-                    <div className="text-[10px] text-neutral-500">Active Tasks</div>
-                  </div>
-                  <div className="rounded border border-neutral-800 bg-neutral-900/60 p-1.5">
-                    <div className="font-mono text-sm font-bold text-amber-400 tabular-nums">
-                      {memberContent.length}
-                    </div>
-                    <div className="text-[10px] text-neutral-500">Deliverables</div>
-                  </div>
-                </div>
-              </div>
-            );
-          })}
+              );
+            })
+          )}
         </div>
       </div>
     </div>

@@ -1,10 +1,143 @@
 export type UserRole = 
   | 'super_admin'
   | 'project_manager'
+  | 'videographer'
   | 'editor'
   | 'copy_editor'
+  | 'qc'
+  | 'graphic_designer'
+  | 'audio_engineer'
+  | 'colorist'
+  | 'strategist'
+  | 'social_media_manager'
   | 'client'
-  | 'viewer';
+  | 'viewer'
+  | (string & {});
+
+export interface SystemRoleDefinition {
+  key: string;
+  label: string;
+  department: 'Leadership' | 'Production' | 'Post-Production' | 'Editorial' | 'Quality' | 'Distribution' | 'Client';
+  description: string;
+  defaultJobTitle: string;
+  badgeClass: string;
+  isClientRole?: boolean;
+}
+
+export const SYSTEM_ROLE_DEFINITIONS: SystemRoleDefinition[] = [
+  {
+    key: 'super_admin',
+    label: 'Super Admin',
+    department: 'Leadership',
+    description: 'Complete system authority, database management, team & client administration',
+    defaultJobTitle: 'Agency Director / Super Admin',
+    badgeClass: 'text-amber-400 border-amber-500/30 bg-amber-400/10',
+  },
+  {
+    key: 'project_manager',
+    label: 'Project Manager (PM)',
+    department: 'Leadership',
+    description: 'Campaign management, retainer cycles, client coordination, and task routing',
+    defaultJobTitle: 'Project & Account Manager',
+    badgeClass: 'text-sky-400 border-sky-500/30 bg-sky-400/10',
+  },
+  {
+    key: 'videographer',
+    label: 'Videographer / Cinematographer',
+    department: 'Production',
+    description: 'On-set filming, camera operation, lighting, raw footage capture & intake',
+    defaultJobTitle: 'Lead Videographer & Cinematographer',
+    badgeClass: 'text-orange-400 border-orange-500/30 bg-orange-400/10',
+  },
+  {
+    key: 'editor',
+    label: 'Video Editor / Motion Graphics',
+    department: 'Post-Production',
+    description: 'Footage editing, cuts, transitions, sound design, pacing, and visual effects',
+    defaultJobTitle: 'Senior Video Editor',
+    badgeClass: 'text-blue-400 border-blue-500/30 bg-blue-400/10',
+  },
+  {
+    key: 'copy_editor',
+    label: 'Copywriter / Script Editor',
+    department: 'Editorial',
+    description: 'Video scripts, reel hooks, social captions, copywriting, and storytelling',
+    defaultJobTitle: 'Content Scriptwriter & Copy Editor',
+    badgeClass: 'text-emerald-400 border-emerald-500/30 bg-emerald-400/10',
+  },
+  {
+    key: 'qc',
+    label: 'Quality Control (QC Specialist)',
+    department: 'Quality',
+    description: 'Pre-client quality assurance, technical specs, audio/sync review, brand standards check',
+    defaultJobTitle: 'Quality Control (QC) Specialist',
+    badgeClass: 'text-purple-400 border-purple-500/30 bg-purple-400/10',
+  },
+  {
+    key: 'graphic_designer',
+    label: 'Graphic Designer / Thumbnail Artist',
+    department: 'Post-Production',
+    description: 'High-CTR YouTube/Instagram thumbnails, carousel slides, brand graphics',
+    defaultJobTitle: 'Graphic & Visual Designer',
+    badgeClass: 'text-pink-400 border-pink-500/30 bg-pink-400/10',
+  },
+  {
+    key: 'audio_engineer',
+    label: 'Sound & Audio Engineer',
+    department: 'Post-Production',
+    description: 'Sound engineering, Foley, audio mixing, dialogue cleanup, and audio mastering',
+    defaultJobTitle: 'Audio Engineer & Sound Designer',
+    badgeClass: 'text-yellow-400 border-yellow-500/30 bg-yellow-400/10',
+  },
+  {
+    key: 'colorist',
+    label: 'Colorist / Color Grader',
+    department: 'Post-Production',
+    description: 'Color grading, cinematic LUT matching, lighting balance, and visual consistency',
+    defaultJobTitle: 'Colorist & Grading Specialist',
+    badgeClass: 'text-indigo-400 border-indigo-500/30 bg-indigo-400/10',
+  },
+  {
+    key: 'strategist',
+    label: 'Content Strategist',
+    department: 'Editorial',
+    description: 'Content strategy, audience retention research, viral trend curation, and growth',
+    defaultJobTitle: 'Creative & Content Strategist',
+    badgeClass: 'text-cyan-400 border-cyan-500/30 bg-cyan-400/10',
+  },
+  {
+    key: 'social_media_manager',
+    label: 'Social Media Manager',
+    department: 'Distribution',
+    description: 'Content scheduling, channel publishing, engagement, and post distribution',
+    defaultJobTitle: 'Social Media Distribution Manager',
+    badgeClass: 'text-teal-400 border-teal-500/30 bg-teal-400/10',
+  },
+  {
+    key: 'client',
+    label: 'Client Representative',
+    department: 'Client',
+    description: 'Review deliverable versions, timestamped feedback, approval sign-offs',
+    defaultJobTitle: 'Brand Representative',
+    badgeClass: 'text-amber-300 border-amber-400/30 bg-amber-400/10',
+    isClientRole: true,
+  },
+  {
+    key: 'viewer',
+    label: 'Viewer / Stakeholder',
+    department: 'Leadership',
+    description: 'Read-only access to campaigns, deliverable calendar, and high-level progress',
+    defaultJobTitle: 'Agency Stakeholder / Observer',
+    badgeClass: 'text-neutral-400 border-neutral-700 bg-neutral-800/40',
+  },
+];
+
+export function formatRoleTitle(role?: string | null): string {
+  if (!role) return 'Team Member';
+  const match = SYSTEM_ROLE_DEFINITIONS.find((r) => r.key === role.toLowerCase());
+  if (match) return match.label;
+  return role.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+}
 
 export interface Profile {
   id: string;
@@ -15,6 +148,7 @@ export interface Profile {
   status: 'active' | 'inactive';
   phone?: string;
   job_title?: string;
+  password?: string;
   created_at: string;
   updated_at: string;
 }
@@ -39,6 +173,7 @@ export interface ClientUser {
   id: string;
   user_id: string;
   client_id: string;
+  created_at?: string;
 }
 
 export type ProjectStatus = 
@@ -98,6 +233,7 @@ export interface RecurringContentTemplate {
   title: string;
   content_type: ContentType;
   platform: Platform;
+  platforms?: Platform[];
   brief?: string;
   caption?: string;
   default_assigned_to?: string;
@@ -108,7 +244,7 @@ export interface RecurringContentTemplate {
 export interface Project {
   id: string;
   client_id: string;
-  project_manager_id: string;
+  project_manager_id?: string;
   project_name: string;
   project_type?: ProjectType;
   description: string;
@@ -138,6 +274,7 @@ export interface TaskChecklistItem {
 export interface Task {
   id: string;
   project_id: string;
+  content_id?: string;
   assigned_to?: string;
   created_by: string;
   title: string;
@@ -180,7 +317,10 @@ export type Platform =
   | 'tiktok'
   | 'linkedin'
   | 'youtube'
-  | 'other';
+  | 'twitter'
+  | 'pinterest'
+  | 'other'
+  | (string & {});
 
 export interface ContentItem {
   id: string;
@@ -190,6 +330,7 @@ export interface ContentItem {
   title: string;
   content_type: ContentType;
   platform: Platform;
+  platforms?: Platform[];
   brief: string;
   caption: string;
   status: ContentStatus;
@@ -208,6 +349,17 @@ export interface ContentItem {
   notes?: string;
   created_at: string;
   updated_at: string;
+}
+
+export function getContentPlatforms(item?: Partial<ContentItem> | null): Platform[] {
+  if (!item) return ['instagram'];
+  if (Array.isArray(item.platforms) && item.platforms.length > 0) {
+    return item.platforms;
+  }
+  if (item.platform) {
+    return [item.platform];
+  }
+  return ['instagram'];
 }
 
 export interface ContentVersion {
@@ -283,4 +435,25 @@ export interface ActivityLog {
   entity_id?: string;
   metadata?: Record<string, any>;
   created_at: string;
+}
+
+export type OptionCategory = 
+  | 'content_type'
+  | 'platform'
+  | 'content_status'
+  | 'project_status'
+  | 'task_status'
+  | 'priority'
+  | 'contributor_role'
+  | 'user_role';
+
+export interface AppOption {
+  id: string;
+  category: OptionCategory | string;
+  key: string;
+  label: string;
+  is_active: boolean;
+  sort_order: number;
+  metadata?: Record<string, any>;
+  created_at?: string;
 }

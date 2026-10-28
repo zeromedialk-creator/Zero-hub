@@ -18,6 +18,11 @@ import {
   Edit2,
   ArrowRight,
   Send,
+  Users,
+  UserPlus,
+  Plus,
+  Trash2,
+  ShieldCheck,
 } from 'lucide-react';
 
 interface ClientDetailModalProps {
@@ -37,11 +42,33 @@ export const ClientDetailModal: React.FC<ClientDetailModalProps> = ({
   onSelectContent,
   onOpenEditModal,
 }) => {
-  const { getClientById, projects, contentItems, files, activityLogs, comments, addComment, archiveClient, profiles } = useData();
+  const {
+    getClientById,
+    projects,
+    contentItems,
+    files,
+    activityLogs,
+    comments,
+    addComment,
+    archiveClient,
+    profiles,
+    getUsersForClient,
+    linkUserToClient,
+    unlinkUserFromClient,
+    createUserProfile,
+  } = useData();
   const { role } = useAuth();
 
-  const [activeTab, setActiveTab] = useState<'overview' | 'projects' | 'content' | 'files' | 'notes'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'projects' | 'content' | 'files' | 'notes'>('overview');
   const [newNote, setNewNote] = useState('');
+
+  // Portal User Management State
+  const [isAddingUser, setIsAddingUser] = useState(false);
+  const [isCreatingNewUser, setIsCreatingNewUser] = useState(false);
+  const [selectedExistingUserId, setSelectedExistingUserId] = useState('');
+  const [newPortalUserName, setNewPortalUserName] = useState('');
+  const [newPortalUserEmail, setNewPortalUserEmail] = useState('');
+  const [newPortalUserTitle, setNewPortalUserTitle] = useState('Brand Manager & Approver');
 
   if (!isOpen || !clientId) return null;
 
@@ -60,6 +87,7 @@ export const ClientDetailModal: React.FC<ClientDetailModalProps> = ({
     (a) => a.entity_id === clientId || a.metadata?.client === client.company_name
   );
   const pm = profiles.find((p) => p.id === client.assigned_pm_id);
+  const clientPortalUsers = getUsersForClient(clientId);
 
   const handleAddNote = (e: React.FormEvent) => {
     e.preventDefault();
@@ -108,7 +136,7 @@ export const ClientDetailModal: React.FC<ClientDetailModalProps> = ({
 
         {/* Tab Controls with Horizontal Touch Scroll */}
         <div className="flex border-b border-neutral-800 bg-neutral-950/40 px-4 sm:px-6 pt-2 text-xs font-medium overflow-x-auto whitespace-nowrap flex-nowrap scrollbar-none shrink-0">
-          {(['overview', 'projects', 'content', 'files', 'notes'] as const).map((tab) => (
+          {(['overview', 'users', 'projects', 'content', 'files', 'notes'] as const).map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
@@ -118,7 +146,9 @@ export const ClientDetailModal: React.FC<ClientDetailModalProps> = ({
                   : 'border-transparent text-neutral-400 hover:text-neutral-200'
               }`}
             >
-              {tab === 'projects'
+              {tab === 'users'
+                ? `Portal Users (${clientPortalUsers.length})`
+                : tab === 'projects'
                 ? `Projects (${clientProjects.length})`
                 : tab === 'content'
                 ? `Deliverables (${clientContent.length})`
@@ -171,6 +201,48 @@ export const ClientDetailModal: React.FC<ClientDetailModalProps> = ({
                 </div>
               </div>
 
+              {/* Portal Access Summary Card */}
+              <div className="rounded-lg border border-neutral-800 bg-neutral-950/60 p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-xs font-semibold uppercase tracking-wider text-neutral-300 flex items-center gap-1.5">
+                    <Users className="h-3.5 w-3.5 text-amber-400" />
+                    Client Portal Access ({clientPortalUsers.length} Logins)
+                  </h3>
+                  <button
+                    onClick={() => setActiveTab('users')}
+                    className="text-xs text-amber-400 hover:text-amber-300 font-semibold"
+                  >
+                    Manage Users →
+                  </button>
+                </div>
+                {clientPortalUsers.length === 0 ? (
+                  <div className="rounded border border-amber-900/40 bg-amber-950/20 p-2.5 text-xs text-amber-300 flex items-center justify-between">
+                    <span>⚠️ No user login is linked to this client yet. Representatives cannot review or approve campaigns.</span>
+                    <button
+                      onClick={() => setActiveTab('users')}
+                      className="rounded bg-amber-400 px-2 py-1 text-[11px] font-semibold text-neutral-950 hover:bg-amber-300 shrink-0 ml-2"
+                    >
+                      Link User
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex flex-wrap gap-2 pt-1">
+                    {clientPortalUsers.map((u) => (
+                      <div
+                        key={u.id}
+                        className="inline-flex items-center gap-2 rounded-lg border border-neutral-800 bg-neutral-900 px-2.5 py-1 text-xs text-neutral-200"
+                      >
+                        <div className="flex h-5 w-5 items-center justify-center rounded-full bg-neutral-800 text-[10px] font-semibold text-amber-400">
+                          {u.full_name.charAt(0)}
+                        </div>
+                        <span className="font-medium">{u.full_name}</span>
+                        <span className="text-[10px] text-neutral-500">({u.email})</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
               {/* Pending Approvals Spotlight */}
               {pendingApprovals.length > 0 && (
                 <div className="rounded-lg border border-amber-800/60 bg-amber-950/20 p-4">
@@ -219,6 +291,225 @@ export const ClientDetailModal: React.FC<ClientDetailModalProps> = ({
                   )}
                 </div>
               </div>
+            </div>
+          )}
+
+          {activeTab === 'users' && (
+            <div className="space-y-5 text-xs">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-neutral-800 pb-4">
+                <div>
+                  <h3 className="text-sm font-semibold text-neutral-100 flex items-center gap-2">
+                    <Users className="h-4 w-4 text-amber-400" />
+                    Client Portal Logins for {client.company_name}
+                  </h3>
+                  <p className="text-xs text-neutral-400 mt-0.5">
+                    User accounts linked here can log in to view this brand's projects, monitor retainer cycles, and approve creative assets.
+                  </p>
+                </div>
+
+                {(role === 'super_admin' || role === 'project_manager') && (
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => {
+                        setIsAddingUser(!isAddingUser);
+                        setIsCreatingNewUser(false);
+                      }}
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-neutral-700 bg-neutral-800 px-3 py-1.5 text-xs font-semibold text-neutral-200 hover:bg-neutral-700 transition-colors"
+                    >
+                      <UserPlus className="h-3.5 w-3.5 text-amber-400" />
+                      <span>Link Existing User</span>
+                    </button>
+                    <button
+                      onClick={() => {
+                        setIsCreatingNewUser(!isCreatingNewUser);
+                        setIsAddingUser(false);
+                      }}
+                      className="inline-flex items-center gap-1.5 rounded-lg bg-amber-400 px-3 py-1.5 text-xs font-semibold text-neutral-950 hover:bg-amber-300 transition-colors"
+                    >
+                      <Plus className="h-3.5 w-3.5" />
+                      <span>Create Portal User</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* Link Existing User Drawer */}
+              {isAddingUser && (
+                <div className="rounded-xl border border-neutral-800 bg-neutral-950/70 p-4 space-y-3">
+                  <div className="font-semibold text-neutral-200 flex items-center gap-2">
+                    <UserPlus className="h-4 w-4 text-amber-400" />
+                    Link Existing User to {client.company_name}
+                  </div>
+                  <div className="flex flex-col sm:flex-row gap-3">
+                    <select
+                      value={selectedExistingUserId}
+                      onChange={(e) => setSelectedExistingUserId(e.target.value)}
+                      className="flex-1 rounded-lg border border-neutral-800 bg-neutral-900 px-3 py-2 text-neutral-200 focus:border-amber-400 focus:outline-hidden"
+                    >
+                      <option value="">-- Choose Account to Link --</option>
+                      {profiles
+                        .filter((p) => !clientPortalUsers.some((cu) => cu.id === p.id))
+                        .map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.full_name} ({p.email}) · Role: {p.role}
+                          </option>
+                        ))}
+                    </select>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={async () => {
+                          if (!selectedExistingUserId) return;
+                          await linkUserToClient(selectedExistingUserId, client.id);
+                          setSelectedExistingUserId('');
+                          setIsAddingUser(false);
+                        }}
+                        className="rounded-lg bg-amber-400 px-4 py-2 font-semibold text-neutral-950 hover:bg-amber-300"
+                      >
+                        Confirm Link
+                      </button>
+                      <button
+                        onClick={() => setIsAddingUser(false)}
+                        className="rounded-lg border border-neutral-800 px-3 py-2 text-neutral-400 hover:text-neutral-200"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Create New Client User Drawer */}
+              {isCreatingNewUser && (
+                <form
+                  onSubmit={async (e) => {
+                    e.preventDefault();
+                    if (!newPortalUserName.trim() || !newPortalUserEmail.trim()) return;
+                    await createUserProfile(
+                      {
+                        full_name: newPortalUserName.trim(),
+                        email: newPortalUserEmail.trim(),
+                        job_title: newPortalUserTitle.trim() || 'Brand Representative',
+                        role: 'client',
+                        status: 'active',
+                        phone: client.phone || '+1 (555) 000-0000',
+                      },
+                      client.id
+                    );
+                    setNewPortalUserName('');
+                    setNewPortalUserEmail('');
+                    setIsCreatingNewUser(false);
+                  }}
+                  className="rounded-xl border border-neutral-800 bg-neutral-950/70 p-4 space-y-3"
+                >
+                  <div className="font-semibold text-neutral-200 flex items-center gap-2">
+                    <Plus className="h-4 w-4 text-amber-400" />
+                    Provision New Client Login for {client.company_name}
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div>
+                      <label className="block text-neutral-400 mb-1 text-[11px]">Full Name *</label>
+                      <input
+                        type="text"
+                        required
+                        value={newPortalUserName}
+                        onChange={(e) => setNewPortalUserName(e.target.value)}
+                        placeholder="e.g. Johnathan Miller"
+                        className="w-full rounded border border-neutral-800 bg-neutral-900 px-3 py-1.5 text-neutral-200 focus:border-amber-400 focus:outline-hidden"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-neutral-400 mb-1 text-[11px]">Email *</label>
+                      <input
+                        type="email"
+                        required
+                        value={newPortalUserEmail}
+                        onChange={(e) => setNewPortalUserEmail(e.target.value)}
+                        placeholder="e.g. client@brand.com"
+                        className="w-full rounded border border-neutral-800 bg-neutral-900 px-3 py-1.5 text-neutral-200 focus:border-amber-400 focus:outline-hidden"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-neutral-400 mb-1 text-[11px]">Job Title</label>
+                      <input
+                        type="text"
+                        value={newPortalUserTitle}
+                        onChange={(e) => setNewPortalUserTitle(e.target.value)}
+                        placeholder="e.g. Managing Director"
+                        className="w-full rounded border border-neutral-800 bg-neutral-900 px-3 py-1.5 text-neutral-200 focus:border-amber-400 focus:outline-hidden"
+                      />
+                    </div>
+                  </div>
+                  <div className="flex justify-end gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => setIsCreatingNewUser(false)}
+                      className="px-3 py-1.5 text-neutral-400 hover:text-neutral-200"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      className="rounded bg-amber-400 px-4 py-1.5 font-semibold text-neutral-950 hover:bg-amber-300"
+                    >
+                      Create & Link Account
+                    </button>
+                  </div>
+                </form>
+              )}
+
+              {/* Users List */}
+              {clientPortalUsers.length === 0 ? (
+                <div className="py-12 text-center rounded-xl border border-dashed border-neutral-800 bg-neutral-950/40 p-8 space-y-3">
+                  <Users className="h-8 w-8 text-neutral-600 mx-auto" />
+                  <div className="text-sm font-semibold text-neutral-300">No Portal Users Linked</div>
+                  <p className="text-xs text-neutral-500 max-w-md mx-auto">
+                    Without a linked account, client representatives from {client.company_name} cannot access their dashboard, view retainer deliverables, or approve creative content.
+                  </p>
+                  {(role === 'super_admin' || role === 'project_manager') && (
+                    <button
+                      onClick={() => setIsCreatingNewUser(true)}
+                      className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-amber-400 px-4 py-2 text-xs font-semibold text-neutral-950 hover:bg-amber-300"
+                    >
+                      <Plus className="h-3.5 w-3.5" />
+                      <span>Create Client Login</span>
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <div className="divide-y divide-neutral-800 rounded-xl border border-neutral-800 bg-neutral-950/60 overflow-hidden">
+                  {clientPortalUsers.map((u) => (
+                    <div key={u.id} className="p-4 flex items-center justify-between gap-3 hover:bg-neutral-900/40 transition-colors">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-amber-500/10 text-amber-400 font-semibold border border-amber-500/20 text-xs">
+                          {u.full_name.charAt(0)}
+                        </div>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="font-semibold text-neutral-100 truncate">{u.full_name}</span>
+                            <span className="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded bg-emerald-950/60 text-emerald-400 border border-emerald-800/60">
+                              {u.status}
+                            </span>
+                          </div>
+                          <div className="text-[11px] text-neutral-400 truncate">
+                            {u.email} · {u.job_title}
+                          </div>
+                        </div>
+                      </div>
+
+                      {(role === 'super_admin' || role === 'project_manager') && (
+                        <button
+                          onClick={() => unlinkUserFromClient(u.id, client.id)}
+                          className="inline-flex items-center gap-1 rounded border border-neutral-800 bg-neutral-900 px-2.5 py-1 text-xs text-neutral-400 hover:text-rose-400 hover:border-rose-900/60 transition-colors shrink-0"
+                          title="Unlink user from this client"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                          <span className="hidden sm:inline">Unlink</span>
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 

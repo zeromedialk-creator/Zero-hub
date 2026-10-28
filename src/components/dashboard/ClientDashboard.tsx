@@ -18,7 +18,13 @@ import {
   Calendar,
   Sparkles,
   AlertTriangle,
+  Building2,
+  Download,
+  Play,
+  Layers,
 } from 'lucide-react';
+import { isVideoMedia } from '../common/MediaViewer';
+import { PlatformListBadges } from '../common/PlatformBadge';
 
 interface ClientDashboardProps {
   onNavigateTab: (tab: any) => void;
@@ -39,11 +45,13 @@ export const ClientDashboard: React.FC<ClientDashboardProps> = ({
     filteredProjects,
     filteredContentItems,
     filteredMonthlyCycles,
+    contentVersions,
     getCycleMetrics,
     approveContent,
     requestChanges,
     addComment,
     comments,
+    approvals,
     profiles,
   } = useData();
 
@@ -85,18 +93,25 @@ export const ClientDashboard: React.FC<ClientDashboardProps> = ({
   const scheduledItems = cycleItems.filter((c) => c.status === 'scheduled');
   const publishedItems = cycleItems.filter((c) => c.status === 'published' || c.status === 'completed');
 
+  // Deliverable metrics supporting both Monthly Retainers & One-Time Projects
+  const oneTimeTargets = (!activeCycle && primaryRetainer?.deliverable_targets) ? primaryRetainer.deliverable_targets : [];
+  const effectiveTarget = cycleMetrics?.target || (oneTimeTargets.length > 0 ? oneTimeTargets.reduce((sum, t) => sum + (Number(t.target_count) || 0), 0) : filteredContentItems.length || 0);
+  const effectiveCompleted = cycleMetrics?.completed || publishedItems.length;
+  const effectiveProgressPercent = effectiveTarget > 0 ? Math.round((effectiveCompleted / effectiveTarget) * 100) : 0;
+  const effectiveTargetsBreakdown = cycleMetrics?.byTarget || oneTimeTargets.map((t) => ({ label: t.label, target: t.target_count }));
+
   // Inline feedback modal / state
   const [inlineFeedbackItemId, setInlineFeedbackItemId] = useState<string | null>(null);
   const [inlineFeedbackText, setInlineFeedbackText] = useState('');
 
-  const handleQuickApprove = (itemId: string) => {
-    approveContent(itemId, 'Approved by client via client portal dashboard.');
+  const handleQuickApprove = async (itemId: string) => {
+    await approveContent(itemId, 'Approved by client via client portal dashboard.');
   };
 
-  const handleSubmitInlineChanges = (e: React.FormEvent) => {
+  const handleSubmitInlineChanges = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!inlineFeedbackItemId || !inlineFeedbackText.trim()) return;
-    requestChanges(inlineFeedbackItemId, inlineFeedbackText.trim());
+    await requestChanges(inlineFeedbackItemId, inlineFeedbackText.trim());
     setInlineFeedbackItemId(null);
     setInlineFeedbackText('');
   };
@@ -120,6 +135,30 @@ export const ClientDashboard: React.FC<ClientDashboardProps> = ({
   };
 
   const currentSectionData = getSectionItems();
+
+  if (!myCompany) {
+    return (
+      <div className="py-20 px-4 max-w-lg mx-auto text-center space-y-5">
+        <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-amber-500/10 border border-amber-500/25 text-amber-400">
+          <Building2 className="h-8 w-8" />
+        </div>
+        <div className="space-y-2">
+          <div className="inline-flex items-center gap-1.5 rounded-full border border-amber-500/30 bg-amber-950/40 px-3 py-1 text-[11px] font-medium text-amber-300">
+            Client Portal Account Active
+          </div>
+          <h2 className="font-display text-xl font-bold text-neutral-100">
+            Account Pending Company Association
+          </h2>
+          <p className="text-xs text-neutral-400 leading-relaxed">
+            Welcome, <strong className="text-neutral-200">{currentUser?.full_name}</strong>. Your client user login ({currentUser?.email}) has been provisioned, but has not yet been linked to your company brand.
+          </p>
+          <p className="text-[11px] text-neutral-500 leading-relaxed">
+            Please ask your Zero Media Project Manager or Super Admin to assign your user account to your company brand in System Settings or the Client profile. Once linked, your projects, monthly cycles, and approval deliverables will automatically load here.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -187,23 +226,23 @@ export const ClientDashboard: React.FC<ClientDashboardProps> = ({
             )}
           </div>
 
-          {/* Target & Progress Cards (Section 11 requirement: Target: 5 Posts, 4 Reels, Progress: 5 / 9) */}
+          {/* Target & Progress Cards (Contracted Targets & Progress) */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-1">
             <div className="rounded-lg border border-neutral-800 bg-neutral-950/70 p-4 space-y-1.5">
               <div className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
-                Monthly Contracted Target
+                {activeCycle ? 'Monthly Contracted Target' : 'Contracted Deliverable Target'}
               </div>
               <div className="flex items-baseline gap-2">
                 <span className="font-mono text-3xl font-bold text-neutral-100">
-                  {cycleMetrics?.target || 9}
+                  {effectiveTarget}
                 </span>
                 <span className="text-xs text-neutral-500">Deliverables</span>
               </div>
               {/* Target deliverable breakdown e.g. 5 Posts, 4 Reels */}
               <div className="flex items-center gap-2 flex-wrap pt-1 text-xs">
-                {cycleMetrics?.byTarget.map((t) => (
+                {effectiveTargetsBreakdown.map((t, idx) => (
                   <span
-                    key={t.label}
+                    key={idx}
                     className="rounded bg-neutral-900 border border-neutral-800 px-2 py-0.5 text-neutral-300 font-medium"
                   >
                     <strong>{t.target}</strong> {t.label}
@@ -218,19 +257,19 @@ export const ClientDashboard: React.FC<ClientDashboardProps> = ({
               </div>
               <div className="flex items-baseline gap-2">
                 <span className="font-mono text-3xl font-bold text-emerald-400">
-                  {cycleMetrics?.completed || 0}
+                  {effectiveCompleted}
                 </span>
                 <span className="text-xs text-neutral-400">
-                  of {cycleMetrics?.target || 9} items
+                  of {effectiveTarget} items
                 </span>
               </div>
               <div className="text-xs text-neutral-400 font-mono">
-                Progress: <strong className="text-emerald-300">{cycleMetrics?.completed} / {cycleMetrics?.target}</strong> ({cycleMetrics?.progressPercent}%)
+                Progress: <strong className="text-emerald-300">{effectiveCompleted} / {effectiveTarget}</strong> ({effectiveProgressPercent}%)
               </div>
               <div className="mt-1.5 h-1.5 w-full bg-neutral-800 rounded-full overflow-hidden">
                 <div
                   className="h-full bg-emerald-400 transition-all duration-300"
-                  style={{ width: `${cycleMetrics?.progressPercent || 0}%` }}
+                  style={{ width: `${effectiveProgressPercent}%` }}
                 />
               </div>
             </div>
@@ -316,82 +355,186 @@ export const ClientDashboard: React.FC<ClientDashboardProps> = ({
               {currentSectionData.items.map((item) => {
                 const itemComms = comments.filter((c) => c.content_id === item.id);
                 const assigned = profiles.find((p) => p.id === item.assigned_to);
+                const itemVersions = contentVersions
+                  .filter((v) => v.content_id === item.id)
+                  .sort((a, b) => b.version_number - a.version_number);
+                const latestVer = itemVersions[0];
+                const mediaUrl = latestVer?.file_url || item.thumbnail_url;
+                const isVideo = isVideoMedia(mediaUrl, latestVer?.file_name);
+                const hasMedia = !!mediaUrl;
 
                 return (
                   <div
                     key={item.id}
-                    className="rounded-xl border border-neutral-800 bg-neutral-900/70 overflow-hidden flex flex-col justify-between hover:border-neutral-700 transition-all shadow-md"
+                    className="rounded-xl border border-neutral-800 bg-neutral-900/70 overflow-hidden flex flex-col justify-between hover:border-neutral-700 transition-all shadow-md group"
                   >
-                    <div>
-                      {/* Thumbnail / Preview (Section 11 requirement) */}
-                      {item.thumbnail_url && (
-                        <div
-                          onClick={() => onOpenReviewModal(item.id)}
-                          className="aspect-video w-full bg-neutral-950 overflow-hidden relative cursor-pointer group"
-                        >
-                          <img
-                            src={item.thumbnail_url}
-                            alt={item.title}
-                            referrerPolicy="no-referrer"
-                            className="h-full w-full object-cover group-hover:scale-105 transition-transform duration-300"
-                          />
-                          <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
-                            <span className="rounded-lg bg-neutral-900/90 text-white px-3 py-1.5 text-xs font-semibold flex items-center gap-1.5 border border-neutral-700">
-                              <Eye className="h-3.5 w-3.5 text-amber-400" />
-                              Preview & Inspect
-                            </span>
-                          </div>
-                          <div className="absolute top-2 left-2">
-                            <span className="rounded bg-black/70 backdrop-blur-xs px-2 py-0.5 text-[10px] font-mono uppercase text-white font-medium border border-white/10">
-                              {item.platform}
-                            </span>
-                          </div>
-                          <div className="absolute top-2 right-2">
-                            <span className="rounded bg-black/70 backdrop-blur-xs px-2 py-0.5 text-[10px] font-semibold capitalize text-amber-400 border border-white/10">
-                              {item.content_type.replace('_', ' ')}
-                            </span>
+                        <div>
+                          {/* Top Media Banner Preview if asset uploaded */}
+                          {hasMedia && (
+                            <div
+                              onClick={() => onOpenReviewModal(item.id)}
+                              className="relative aspect-video w-full bg-neutral-950 overflow-hidden cursor-pointer border-b border-neutral-800 flex items-center justify-center group-hover:opacity-95 transition-opacity"
+                            >
+                              {isVideo ? (
+                                <div className="relative w-full h-full flex items-center justify-center bg-black/90">
+                                  {item.thumbnail_url ? (
+                                    <img
+                                      src={item.thumbnail_url}
+                                      alt={item.title}
+                                      className="w-full h-full object-cover opacity-60"
+                                    />
+                                  ) : (
+                                    <div className="absolute inset-0 bg-linear-to-br from-neutral-900 via-neutral-950 to-amber-950/30" />
+                                  )}
+                                  <div className="absolute flex h-12 w-12 items-center justify-center rounded-full bg-amber-400 text-neutral-950 shadow-xl group-hover:scale-110 transition-transform">
+                                    <Play className="h-5 w-5 fill-current ml-0.5" />
+                                  </div>
+                                </div>
+                              ) : (
+                                <img
+                                  src={mediaUrl}
+                                  alt={item.title}
+                                  referrerPolicy="no-referrer"
+                                  className="w-full h-full object-cover group-hover:scale-102 transition-transform duration-300"
+                                />
+                              )}
+
+                              {/* Version tag overlay */}
+                              <div className="absolute top-2.5 left-2.5 flex items-center gap-1.5">
+                                <span className="rounded-md bg-neutral-950/85 px-2 py-0.5 text-[10px] font-mono font-bold text-amber-300 border border-amber-400/30 backdrop-blur-md shadow-sm">
+                                  V{latestVer?.version_number || 1} Master
+                                </span>
+                                {itemVersions.length > 1 && (
+                                  <span className="rounded-md bg-neutral-950/85 px-1.5 py-0.5 text-[10px] font-mono text-neutral-400 border border-neutral-800 backdrop-blur-md">
+                                    {itemVersions.length} versions
+                                  </span>
+                                )}
+                              </div>
+
+                              <div className="absolute bottom-2 right-2 rounded bg-neutral-950/80 px-2 py-0.5 text-[10px] font-medium text-neutral-300 border border-neutral-800 backdrop-blur-xs flex items-center gap-1">
+                                <Eye className="h-3 w-3 text-amber-400" />
+                                <span>Click to Review Asset</span>
+                              </div>
+                            </div>
+                          )}
+
+                          <div className="p-4 space-y-3">
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="space-y-1 min-w-0">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <PlatformListBadges platforms={item.platforms} platform={item.platform} maxDisplay={2} />
+                                  <span className="rounded bg-neutral-800/80 px-2 py-0.5 text-[10px] font-semibold capitalize text-amber-400">
+                                    {item.content_type.replace('_', ' ')}
+                                  </span>
+                                  {latestVer && (
+                                    <span className="rounded bg-amber-500/10 border border-amber-500/30 px-2 py-0.5 text-[10px] font-mono text-amber-300 font-bold">
+                                      V{latestVer.version_number}
+                                    </span>
+                                  )}
+                                </div>
+                                <h3
+                                  onClick={() => onSelectContent(item.id)}
+                                  className="text-base font-bold text-neutral-100 hover:text-amber-400 cursor-pointer leading-snug truncate"
+                                >
+                                  {item.title}
+                                </h3>
+                              </div>
+                              <StatusBadge status={item.status} />
+                            </div>
+
+                            {/* Prominent Uploaded Version Card */}
+                            <div className="rounded-lg border border-neutral-800 bg-neutral-950/80 p-3 text-xs space-y-1.5">
+                              <div className="flex items-center justify-between flex-wrap gap-2">
+                                <div className="flex items-center gap-1.5 min-w-0">
+                                  <span className="text-[10px] font-semibold text-neutral-400 uppercase tracking-wider shrink-0">
+                                    Uploaded Version:
+                                  </span>
+                                  <span className="font-mono text-xs font-bold text-amber-400 shrink-0">
+                                    V{latestVer?.version_number || 1}
+                                  </span>
+                                  <span className="text-neutral-300 truncate max-w-[150px] font-mono text-[11px]">
+                                    ({latestVer?.file_name || `${item.title}_Master`})
+                                  </span>
+                                </div>
+                                {mediaUrl && (
+                                  <a
+                                    href={mediaUrl}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-400 hover:text-amber-300 hover:underline shrink-0"
+                                  >
+                                    <Download className="h-3 w-3" />
+                                    <span>Download Asset</span>
+                                  </a>
+                                )}
+                              </div>
+
+                              {latestVer?.notes && (
+                                <p className="text-[11px] text-neutral-300 italic line-clamp-2 leading-relaxed pl-1 border-l-2 border-amber-500/40">
+                                  "{latestVer.notes}"
+                                </p>
+                              )}
+
+                              {itemVersions.length > 1 && (
+                                <div className="flex items-center gap-1.5 pt-1 border-t border-neutral-900 text-[10px] text-neutral-400 flex-wrap">
+                                  <span>Version history:</span>
+                                  {itemVersions.map((v) => (
+                                    <button
+                                      key={v.id}
+                                      type="button"
+                                      onClick={() => onOpenReviewModal(item.id)}
+                                      className={`rounded px-1.5 py-0.2 font-mono transition-colors ${
+                                        v.id === latestVer?.id
+                                          ? 'bg-amber-400/20 text-amber-300 border border-amber-400/40 font-bold'
+                                          : 'bg-neutral-900 text-neutral-400 hover:text-white border border-neutral-800'
+                                      }`}
+                                    >
+                                      V{v.version_number}
+                                    </button>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Submitted Change Request Details if Changes Requested */}
+                            {item.status === 'changes_requested' && (
+                              <div className="rounded-lg border border-rose-500/40 bg-rose-950/25 p-3 text-xs space-y-1">
+                                <span className="text-[10px] font-semibold text-rose-400 uppercase tracking-wider block">
+                                  Your Revision Notes Sent to Creative Team:
+                                </span>
+                                <p className="italic text-rose-100 line-clamp-3 leading-relaxed">
+                                  "{approvals.find((a) => a.content_id === item.id && a.status === 'changes_requested')?.comment || item.notes || 'Revisions requested.'}"
+                                </p>
+                              </div>
+                            )}
+
+                            {/* Caption Preview (Section 11 requirement) */}
+                            {item.caption ? (
+                              <div className="rounded-lg border border-neutral-800 bg-neutral-950/60 p-2.5 text-xs text-neutral-300 leading-relaxed font-sans line-clamp-3">
+                                <span className="text-[10px] font-semibold text-amber-400 block mb-1 uppercase tracking-wider">
+                                  Draft Caption:
+                                </span>
+                                {item.caption}
+                              </div>
+                            ) : (
+                              <p className="text-xs text-neutral-500 italic line-clamp-2">
+                                {item.brief || 'Brief in progress.'}
+                              </p>
+                            )}
+
+                            {/* Metadata row: Platform & Publishing Date */}
+                            <div className="flex items-center justify-between text-xs pt-1 border-t border-neutral-800/60 text-neutral-400">
+                              <span className="flex items-center gap-1">
+                                <span className="text-neutral-500">Channel:</span>
+                                <strong className="text-neutral-200 capitalize font-medium">{item.platform}</strong>
+                              </span>
+                              <span className="flex items-center gap-1 font-mono">
+                                <span className="text-neutral-500">Publishing:</span>
+                                <strong className="text-amber-400 font-semibold">{item.publishing_date || 'TBD'}</strong>
+                              </span>
+                            </div>
                           </div>
                         </div>
-                      )}
-
-                      <div className="p-4 space-y-3">
-                        <div className="flex items-start justify-between gap-2">
-                          <h3
-                            onClick={() => onSelectContent(item.id)}
-                            className="text-sm font-bold text-neutral-100 hover:text-amber-400 cursor-pointer leading-snug"
-                          >
-                            {item.title}
-                          </h3>
-                          <StatusBadge status={item.status} />
-                        </div>
-
-                        {/* Caption Preview (Section 11 requirement) */}
-                        {item.caption ? (
-                          <div className="rounded-lg border border-neutral-800 bg-neutral-950/60 p-2.5 text-xs text-neutral-300 leading-relaxed font-sans line-clamp-3">
-                            <span className="text-[10px] font-semibold text-amber-400 block mb-1 uppercase tracking-wider">
-                              Draft Caption:
-                            </span>
-                            {item.caption}
-                          </div>
-                        ) : (
-                          <p className="text-xs text-neutral-500 italic line-clamp-2">
-                            {item.brief || 'Brief in progress.'}
-                          </p>
-                        )}
-
-                        {/* Metadata row: Platform & Publishing Date */}
-                        <div className="flex items-center justify-between text-xs pt-1 border-t border-neutral-800/60 text-neutral-400">
-                          <span className="flex items-center gap-1">
-                            <span className="text-neutral-500">Channel:</span>
-                            <strong className="text-neutral-200 capitalize font-medium">{item.platform}</strong>
-                          </span>
-                          <span className="flex items-center gap-1 font-mono">
-                            <span className="text-neutral-500">Publishing:</span>
-                            <strong className="text-amber-400 font-semibold">{item.publishing_date || 'TBD'}</strong>
-                          </span>
-                        </div>
-                      </div>
-                    </div>
 
                     {/* Bottom Action Area (Section 11: Approve, Request Changes, Add comments, Preview) */}
                     <div className="p-4 pt-2 border-t border-neutral-800 bg-neutral-950/40 space-y-2">
@@ -430,10 +573,10 @@ export const ClientDashboard: React.FC<ClientDashboardProps> = ({
                           <div className="flex items-center gap-2">
                             <button
                               onClick={() => onOpenReviewModal(item.id)}
-                              className="rounded-lg border border-neutral-800 bg-neutral-900 px-3 py-1.5 text-xs font-medium text-neutral-300 hover:bg-neutral-800 hover:text-white transition-colors flex items-center gap-1"
+                              className="rounded-lg border border-neutral-800 bg-neutral-900 px-3 py-1.5 text-xs font-semibold text-neutral-200 hover:bg-neutral-800 hover:text-white transition-colors flex items-center gap-1.5"
                             >
                               <Eye className="h-3.5 w-3.5 text-amber-400" />
-                              <span>Preview</span>
+                              <span>Review V{latestVer?.version_number || 1}</span>
                             </button>
                             <button
                               onClick={() => onSelectContent(item.id)}
@@ -462,6 +605,14 @@ export const ClientDashboard: React.FC<ClientDashboardProps> = ({
                                 <span>Approve</span>
                               </button>
                             </div>
+                          ) : item.status === 'changes_requested' ? (
+                            <button
+                              onClick={() => onOpenReviewModal(item.id)}
+                              className="rounded-lg border border-rose-500/40 bg-rose-950/20 px-3 py-1.5 text-xs font-semibold text-rose-300 hover:bg-rose-950/40 transition-colors flex items-center gap-1.5"
+                            >
+                              <Eye className="h-3.5 w-3.5 text-rose-400" />
+                              <span>View Review Desk</span>
+                            </button>
                           ) : (
                             <span className="text-[11px] font-mono text-neutral-500">
                               Status: {item.status.replace('_', ' ')}

@@ -15,6 +15,7 @@ import {
   Layers,
   X,
 } from 'lucide-react';
+import { ThemeToggle } from '../common/ThemeToggle';
 
 export type NavigationTab =
   | 'dashboard'
@@ -137,6 +138,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </nav>
       </div>
 
+      {/* Appearance Switcher */}
+      <div className="px-3 mb-2">
+        <ThemeToggle variant="sidebar" />
+      </div>
+
       {/* Footer system notice */}
       <div className="px-4">
         <div className="rounded-lg border border-neutral-800/80 bg-neutral-900/40 p-3 text-[11px]">
@@ -146,7 +152,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </div>
           <p className="mt-1 text-neutral-500 text-[10px] leading-relaxed">
             {role === 'super_admin'
-              ? 'Role-Based Access Active · Supabase Postgres RLS'
+              ? 'Role-Based Access Active · Cloud Database RLS'
               : 'Role-Based Access Active · Enterprise Secured'}
           </p>
         </div>

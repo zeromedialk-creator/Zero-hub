@@ -14,6 +14,8 @@ import {
   ExternalLink,
 } from 'lucide-react';
 
+import { MediaViewer } from '../common/MediaViewer';
+
 interface ClientReviewModalProps {
   contentId: string | null;
   isOpen: boolean;
@@ -30,18 +32,42 @@ export const ClientReviewModal: React.FC<ClientReviewModalProps> = ({ contentId,
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [mobileTab, setMobileTab] = useState<'decision' | 'preview' | 'discussion'>('decision');
+  const [reopenReview, setReopenReview] = useState(false);
+  const [selectedVersionId, setSelectedVersionId] = useState<string | null>(null);
+  const [dismissRevisionNotice, setDismissRevisionNotice] = useState(false);
 
-  if (!isOpen || !contentId) return null;
+  React.useEffect(() => {
+    setDismissRevisionNotice(false);
+  }, [contentId]);
+
+  if (!isOpen || !contentId || role !== 'client') return null;
 
   const item = getContentById(contentId);
   if (!item) return null;
 
   const versions = contentVersions.filter((v) => v.content_id === contentId).sort((a, b) => b.version_number - a.version_number);
   const latestVersion = versions[0];
+  const activeVersion = versions.find((v) => v.id === selectedVersionId) || latestVersion;
   const itemComments = comments.filter((c) => c.content_id === contentId);
   const itemApprovals = approvals.filter((a) => a.content_id === contentId);
+  const latestChangeRequest = itemApprovals.find((a) => a.status === 'changes_requested');
+  const requesterProfile = latestChangeRequest
+    ? profiles.find((p) => p.id === latestChangeRequest.client_user_id)
+    : null;
 
-  const handleSubmitDecision = (e: React.FormEvent) => {
+  // Check whether a revised version was uploaded after the change request was submitted
+  const hasRevisedVersionUploaded = Boolean(
+    latestChangeRequest && versions.some(
+      (v) => new Date(v.created_at).getTime() > new Date(latestChangeRequest.created_at).getTime() || v.version_number > 1
+    )
+  );
+
+  // Active revision request alert only appears when changes are actively requested and not yet addressed
+  const isRevisionRequestActive = item.status === 'changes_requested' && !hasRevisedVersionUploaded;
+
+  const canSubmitReview = role === 'client';
+
+  const handleSubmitDecision = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormError(null);
     if (decision === 'request_changes' && !commentText.trim()) {
@@ -50,13 +76,18 @@ export const ClientReviewModal: React.FC<ClientReviewModalProps> = ({ contentId,
     }
 
     setSubmitting(true);
-    if (decision === 'approve') {
-      approveContent(contentId, commentText || 'Approved by client.');
-    } else if (decision === 'request_changes') {
-      requestChanges(contentId, commentText);
+    try {
+      if (decision === 'approve') {
+        await approveContent(contentId, commentText || 'Approved by client.');
+      } else if (decision === 'request_changes') {
+        await requestChanges(contentId, commentText);
+      }
+      setSubmitting(false);
+      onClose();
+    } catch (err: any) {
+      setFormError(err?.message || 'Failed to submit review decision');
+      setSubmitting(false);
     }
-    setSubmitting(false);
-    onClose();
   };
 
   const handleSendDiscussion = (e: React.FormEvent) => {
@@ -133,26 +164,49 @@ export const ClientReviewModal: React.FC<ClientReviewModalProps> = ({ contentId,
           <div className={`lg:col-span-7 p-4 sm:p-6 border-b lg:border-b-0 lg:border-r border-neutral-800 space-y-4 sm:space-y-5 ${
             mobileTab !== 'preview' ? 'hidden lg:block' : 'block'
           }`}>
-            {/* Visual Media Showcase */}
-            <div className="rounded-xl border border-neutral-800 bg-neutral-950 overflow-hidden shadow-inner">
-              {latestVersion?.file_url || item.thumbnail_url ? (
-                <div className="relative aspect-video sm:aspect-4/3 w-full bg-neutral-950 flex items-center justify-center group">
-                  <img
-                    src={latestVersion?.file_url || item.thumbnail_url}
-                    alt={item.title}
-                    referrerPolicy="no-referrer"
-                    className="max-h-full max-w-full object-contain"
-                  />
-                  <div className="absolute bottom-3 right-3 rounded-md bg-neutral-950/80 px-2.5 py-1 text-[11px] font-mono text-neutral-300 backdrop-blur-xs border border-neutral-800">
-                    Version {latestVersion?.version_number || 1} Master
-                  </div>
-                </div>
-              ) : (
-                <div className="aspect-video w-full flex items-center justify-center text-xs text-neutral-500">
-                  Visual asset undergoing processing
-                </div>
-              )}
-            </div>
+            {/* Version Switcher Pills (If multiple versions exist) */}
+            {versions.length > 1 && (
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
+                <span className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400 mr-1 shrink-0">
+                  Select Version:
+                </span>
+                {versions.map((ver) => {
+                  const isCurrent = (activeVersion?.id === ver.id);
+                  const isMasterLatest = (latestVersion?.id === ver.id);
+                  return (
+                    <button
+                      key={ver.id}
+                      type="button"
+                      onClick={() => setSelectedVersionId(ver.id)}
+                      className={`rounded-lg px-2.5 py-1 text-xs font-mono font-medium transition-colors shrink-0 flex items-center gap-1.5 ${
+                        isCurrent
+                          ? 'bg-amber-400 text-neutral-950 font-bold shadow-xs'
+                          : 'bg-neutral-900 text-neutral-300 hover:text-white border border-neutral-800'
+                      }`}
+                    >
+                      <span>V{ver.version_number}</span>
+                      {isMasterLatest && (
+                        <span className={`text-[9px] px-1 rounded uppercase tracking-wider ${
+                          isCurrent ? 'bg-neutral-950/20 text-neutral-900 font-bold' : 'bg-amber-400/20 text-amber-300'
+                        }`}>
+                          Latest
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Visual Media Showcase with Video & Image & Cloud Link support */}
+            <MediaViewer
+              fileUrl={activeVersion?.file_url || item.thumbnail_url}
+              fileName={activeVersion?.file_name}
+              title={item.title}
+              versionNumber={activeVersion?.version_number || 1}
+              thumbnailUrl={item.thumbnail_url}
+              notes={activeVersion?.notes}
+            />
 
             {/* Creative Brief */}
             <div>
@@ -176,38 +230,79 @@ export const ClientReviewModal: React.FC<ClientReviewModalProps> = ({ contentId,
 
             {/* Version History Archive */}
             <div>
-              <label className="text-[11px] font-medium uppercase tracking-wider text-neutral-400 block mb-2">
-                Version History ({versions.length})
-              </label>
+              <div className="flex items-center justify-between mb-2">
+                <label className="text-[11px] font-medium uppercase tracking-wider text-neutral-400 block">
+                  Version History ({versions.length})
+                </label>
+                <span className="text-[10px] text-neutral-500">
+                  Click any version to preview asset
+                </span>
+              </div>
               <div className="space-y-2">
-                {versions.map((ver) => {
-                  const uploader = profiles.find((p) => p.id === ver.uploaded_by);
-                  return (
-                    <div
-                      key={ver.id}
-                      className="flex items-center justify-between rounded-lg border border-neutral-800/80 bg-neutral-950/40 p-2.5 text-xs"
-                    >
-                      <div>
-                        <div className="font-semibold text-neutral-200">
-                          Version {ver.version_number}: {ver.file_name}
+                {versions.length === 0 ? (
+                  <div className="rounded-lg border border-dashed border-neutral-800 p-3 text-center text-xs text-neutral-500">
+                    No version history records found.
+                  </div>
+                ) : (
+                  versions.map((ver) => {
+                    const uploader = profiles.find((p) => p.id === ver.uploaded_by);
+                    const isSelected = activeVersion?.id === ver.id;
+                    const isLatest = latestVersion?.id === ver.id;
+                    return (
+                      <div
+                        key={ver.id}
+                        onClick={() => setSelectedVersionId(ver.id)}
+                        className={`cursor-pointer flex items-center justify-between rounded-lg border p-2.5 text-xs transition-colors ${
+                          isSelected
+                            ? 'border-amber-500/60 bg-amber-500/10'
+                            : 'border-neutral-800/80 bg-neutral-950/40 hover:border-neutral-700'
+                        }`}
+                      >
+                        <div className="min-w-0 pr-2">
+                          <div className="font-semibold text-neutral-200 flex items-center gap-2">
+                            <span>Version {ver.version_number}: {ver.file_name}</span>
+                            {isLatest && (
+                              <span className="rounded bg-amber-400/20 px-1.5 py-0.2 text-[9px] font-mono text-amber-300 border border-amber-400/30">
+                                Latest Master
+                              </span>
+                            )}
+                            {isSelected && (
+                              <span className="text-[10px] text-amber-400 font-medium">
+                                (Now Previewing)
+                              </span>
+                            )}
+                          </div>
+                          {ver.notes && <div className="text-[11px] text-neutral-400 mt-0.5 line-clamp-1">{ver.notes}</div>}
+                          <div className="text-[10px] text-neutral-500 mt-0.5">
+                            Uploaded by {uploader?.full_name || 'Creative Team'} · {new Date(ver.created_at).toLocaleDateString()}
+                          </div>
                         </div>
-                        <div className="text-[11px] text-neutral-400 mt-0.5">{ver.notes}</div>
-                        <div className="text-[10px] text-neutral-500 mt-0.5">
-                          Uploaded by {uploader?.full_name || 'Team member'} · {new Date(ver.created_at).toLocaleDateString()}
+                        <div className="flex items-center gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
+                          <button
+                            type="button"
+                            onClick={() => setSelectedVersionId(ver.id)}
+                            className={`rounded px-2 py-1 text-[11px] font-medium transition-colors ${
+                              isSelected
+                                ? 'bg-amber-400 text-neutral-950 font-bold'
+                                : 'bg-neutral-800 text-neutral-300 hover:text-white'
+                            }`}
+                          >
+                            {isSelected ? 'Viewing' : 'Inspect'}
+                          </button>
+                          <a
+                            href={ver.file_url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="rounded border border-neutral-700 bg-neutral-800 p-1.5 text-neutral-300 hover:text-white transition-colors"
+                            title="Download file"
+                          >
+                            <Download className="h-3.5 w-3.5" />
+                          </a>
                         </div>
                       </div>
-                      <a
-                        href={ver.file_url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="rounded border border-neutral-700 bg-neutral-800 p-1.5 text-neutral-300 hover:text-white"
-                        title="Download file"
-                      >
-                        <Download className="h-3.5 w-3.5" />
-                      </a>
-                    </div>
-                  );
-                })}
+                    );
+                  })
+                )}
               </div>
             </div>
           </div>
@@ -227,83 +322,260 @@ export const ClientReviewModal: React.FC<ClientReviewModalProps> = ({ contentId,
                 </p>
               </div>
 
-              {item.status === 'approved' ? (
-                <div className="rounded-lg border border-emerald-900/60 bg-emerald-950/30 p-4 text-xs text-emerald-300 space-y-1">
+              {item.status === 'approved' && !reopenReview ? (
+                <div className="rounded-lg border border-emerald-900/60 bg-emerald-950/30 p-4 text-xs text-emerald-300 space-y-3">
                   <div className="font-semibold flex items-center gap-1.5 text-emerald-400">
                     <CheckCircle2 className="h-4 w-4" /> Content Approved!
                   </div>
                   <p className="text-[11px] text-emerald-300/80">
                     This deliverable is locked and queued for publishing on {item.publishing_date || 'scheduled date'}.
                   </p>
+                  {canSubmitReview && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setReopenReview(true);
+                        setDecision('request_changes');
+                      }}
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-rose-500/40 bg-rose-500/10 px-3 py-1.5 text-xs font-semibold text-rose-300 hover:bg-rose-500/20 transition-colors"
+                    >
+                      <AlertCircle className="h-3.5 w-3.5" />
+                      <span>Request Further Changes / Revise</span>
+                    </button>
+                  )}
                 </div>
               ) : (
-                <form onSubmit={handleSubmitDecision} className="space-y-3">
-                  <div className="grid grid-cols-2 gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setDecision('approve')}
-                      className={`flex items-center justify-center gap-2 rounded-lg border p-3 text-xs font-semibold transition-colors ${
-                        decision === 'approve'
-                          ? 'border-emerald-500 bg-emerald-500/15 text-emerald-400'
-                          : 'border-neutral-800 bg-neutral-900 text-neutral-300 hover:border-neutral-700'
-                      }`}
-                    >
-                      <CheckCircle2 className="h-4 w-4" />
-                      <span>Approve</span>
-                    </button>
+                <div className="space-y-4">
+                  {/* PROMINENT REVISION REQUEST FEEDBACK CARD (Closes when revised version is submitted or dismissed) */}
+                  {isRevisionRequestActive && !dismissRevisionNotice && (
+                    <div className="rounded-xl border border-rose-500/40 bg-rose-950/25 p-4 space-y-2.5 shadow-sm relative">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-1.5 text-xs font-bold text-rose-400 uppercase tracking-wider">
+                          <AlertCircle className="h-4 w-4 shrink-0 text-rose-400" />
+                          <span>Revisions Requested by Client</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {latestChangeRequest && (
+                            <span className="text-[10px] text-neutral-400 font-mono">
+                              {new Date(latestChangeRequest.created_at).toLocaleDateString()} at{' '}
+                              {new Date(latestChangeRequest.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            </span>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => setDismissRevisionNotice(true)}
+                            className="rounded p-1 text-neutral-400 hover:text-white hover:bg-neutral-800 transition-colors"
+                            title="Close message"
+                          >
+                            <X className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      </div>
 
-                    <button
-                      type="button"
-                      onClick={() => setDecision('request_changes')}
-                      className={`flex items-center justify-center gap-2 rounded-lg border p-3 text-xs font-semibold transition-colors ${
-                        decision === 'request_changes'
-                          ? 'border-rose-500 bg-rose-500/15 text-rose-400'
-                          : 'border-neutral-800 bg-neutral-900 text-neutral-300 hover:border-neutral-700'
-                      }`}
-                    >
-                      <AlertCircle className="h-4 w-4" />
-                      <span>Request Changes</span>
-                    </button>
-                  </div>
+                      <div className="rounded-lg border border-rose-900/50 bg-neutral-950/80 p-3 text-xs text-neutral-100 leading-relaxed font-sans">
+                        <span className="text-[10px] font-semibold text-rose-400 block mb-1 uppercase tracking-wider">
+                          Client Revision Instructions:
+                        </span>
+                        <p className="whitespace-pre-wrap text-neutral-200 font-medium">
+                          "{latestChangeRequest?.comment || item.notes || 'Revisions required.'}"
+                        </p>
+                        <div className="text-[10px] text-neutral-400 mt-2 pt-2 border-t border-neutral-800/80 flex items-center justify-between">
+                          <span>
+                            Requested by: <strong className="text-neutral-200">{requesterProfile?.full_name || 'Client Representative'}</strong>
+                          </span>
+                          <span className="capitalize text-neutral-500">{requesterProfile?.role.replace('_', ' ') || 'Client'}</span>
+                        </div>
+                      </div>
 
-                  {decision && (
-                    <div className="space-y-2 pt-1">
-                      {formError && (
-                        <div className="rounded-lg border border-rose-800/80 bg-rose-950/40 p-2.5 text-xs text-rose-300">
-                          {formError}
+                      {role !== 'client' ? (
+                        <div className="rounded-lg bg-neutral-900/80 border border-neutral-800 p-2.5 text-[11px] text-neutral-300 space-y-1">
+                          <div className="font-semibold text-amber-300 flex items-center gap-1">
+                            <span>⚡ Creative Team Action Required:</span>
+                          </div>
+                          <p className="text-neutral-400">
+                            Please adjust the edit or copy based on the client notes above, then upload Version {(latestVersion?.version_number || 1) + 1} to request re-approval.
+                          </p>
+                        </div>
+                      ) : (
+                        <div className="rounded-lg bg-neutral-900/80 border border-neutral-800 p-2.5 text-[11px] text-emerald-400/90 flex items-center gap-2">
+                          <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
+                          <span>Your change request has been notified to the Zero Media production team.</span>
                         </div>
                       )}
-                      <label className="text-[11px] font-medium text-neutral-300 block">
-                        {decision === 'request_changes'
-                          ? 'Required Feedback Notes (Explain what to adjust):'
-                          : 'Approval Note (Optional):'}
-                      </label>
-                      <textarea
-                        rows={3}
-                        value={commentText}
-                        onChange={(e) => setCommentText(e.target.value)}
-                        placeholder={
-                          decision === 'request_changes'
-                            ? 'e.g. Please extend the end logo lockup by 1 second and adjust caption line 2...'
-                            : 'Looks great! Ready to push live.'
-                        }
-                        className="w-full rounded-lg border border-neutral-800 bg-neutral-950 p-3 text-xs text-neutral-100 placeholder-neutral-600 focus:border-amber-400 focus:outline-hidden"
-                      />
+                    </div>
+                  )}
 
+                  {/* Revised Version Ready for Sign-Off: Replaces old change request alert */}
+                  {hasRevisedVersionUploaded && item.status === 'client_review' && !dismissRevisionNotice && (
+                    <div className="rounded-xl border border-sky-500/30 bg-sky-950/20 p-3.5 text-xs text-sky-200 flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-2.5">
+                        <div className="flex h-6 w-6 items-center justify-center rounded-full bg-sky-500/20 text-sky-400 shrink-0">
+                          <CheckCircle2 className="h-4 w-4" />
+                        </div>
+                        <div>
+                          <span className="font-semibold text-sky-300 block">
+                            Revised Version Ready for Sign-Off
+                          </span>
+                          <span className="text-[11px] text-sky-200/80">
+                            A revised cut addressing previous revision notes has been uploaded. Please review the updated version and submit your decision below.
+                          </span>
+                        </div>
+                      </div>
                       <button
-                        type="submit"
-                        disabled={submitting || (decision === 'request_changes' && !commentText.trim())}
-                        className={`w-full rounded-lg py-2.5 text-xs font-semibold transition-colors disabled:opacity-50 ${
-                          decision === 'approve'
-                            ? 'bg-emerald-500 text-neutral-950 hover:bg-emerald-400'
-                            : 'bg-rose-500 text-white hover:bg-rose-400'
-                        }`}
+                        type="button"
+                        onClick={() => setDismissRevisionNotice(true)}
+                        className="rounded p-1 text-neutral-400 hover:text-white hover:bg-neutral-800 transition-colors shrink-0"
+                        title="Close message"
                       >
-                        {decision === 'approve' ? 'Confirm Approval' : 'Submit Change Request'}
+                        <X className="h-4 w-4" />
                       </button>
                     </div>
                   )}
-                </form>
+
+                  {/* Decision Sign-Off Form */}
+                  {!canSubmitReview ? (
+                    <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3.5 text-xs text-amber-200 space-y-1">
+                      <div className="font-semibold text-amber-300">Client Sign-off Exclusive</div>
+                      <p className="text-neutral-300 text-[11px] leading-relaxed">
+                        Sign-off decisions are reserved for client representatives. Production team members can view feedback, review comments, or inspect assets.
+                      </p>
+                    </div>
+                  ) : (
+                    <form onSubmit={handleSubmitDecision} className="space-y-3 pt-1">
+                      <div className="text-xs font-medium text-neutral-300">
+                        {item.status === 'changes_requested' ? 'Update Review Decision:' : 'Submit Decision:'}
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setDecision('approve')}
+                          className={`flex items-center justify-center gap-2 rounded-lg border p-3 text-xs font-semibold transition-colors ${
+                            decision === 'approve'
+                              ? 'border-emerald-500 bg-emerald-500/15 text-emerald-400'
+                              : 'border-neutral-800 bg-neutral-900 text-neutral-300 hover:border-neutral-700'
+                          }`}
+                        >
+                          <CheckCircle2 className="h-4 w-4" />
+                          <span>Approve</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setDecision('request_changes')}
+                          className={`flex items-center justify-center gap-2 rounded-lg border p-3 text-xs font-semibold transition-colors ${
+                            decision === 'request_changes'
+                              ? 'border-rose-500 bg-rose-500/15 text-rose-400'
+                              : 'border-neutral-800 bg-neutral-900 text-neutral-300 hover:border-neutral-700'
+                          }`}
+                        >
+                          <AlertCircle className="h-4 w-4" />
+                          <span>Request Changes</span>
+                        </button>
+                      </div>
+
+                      {decision && (
+                        <div className="space-y-2.5 pt-1">
+                          {formError && (
+                            <div className="rounded-lg border border-rose-800/80 bg-rose-950/40 p-2.5 text-xs text-rose-300">
+                              {formError}
+                            </div>
+                          )}
+
+                          {/* Automatic Workflow Pipeline Stage Indicator */}
+                          <div className="rounded-lg bg-neutral-900 border border-neutral-800 p-2.5 text-[11px] flex items-center justify-between">
+                            <span className="text-neutral-400">Automatic Pipeline Stage:</span>
+                            <span
+                              className={`font-semibold font-mono flex items-center gap-1.5 ${
+                                decision === 'approve' ? 'text-emerald-400' : 'text-rose-400'
+                              }`}
+                            >
+                              <span>{decision === 'approve' ? 'Approved' : 'Changes Requested'}</span>
+                              <span className="text-[10px] font-sans text-neutral-500">
+                                (auto-updates pipeline)
+                              </span>
+                            </span>
+                          </div>
+
+                          <label className="text-[11px] font-medium text-neutral-300 block">
+                            {decision === 'request_changes'
+                              ? 'Detailed Feedback Notes (Explain what adjustments are required):'
+                              : 'Approval Note (Optional):'}
+                          </label>
+                          <textarea
+                            rows={3}
+                            value={commentText}
+                            onChange={(e) => setCommentText(e.target.value)}
+                            placeholder={
+                              decision === 'request_changes'
+                                ? 'e.g. Please extend the end logo lockup by 1 second and adjust caption line 2...'
+                                : 'Looks great! Ready to push live.'
+                            }
+                            className="w-full rounded-lg border border-neutral-800 bg-neutral-950 p-3 text-xs text-neutral-100 placeholder-neutral-600 focus:border-amber-400 focus:outline-hidden"
+                          />
+
+                          <button
+                            type="submit"
+                            disabled={submitting || (decision === 'request_changes' && !commentText.trim())}
+                            className={`w-full rounded-lg py-2.5 text-xs font-semibold transition-colors disabled:opacity-50 ${
+                              decision === 'approve'
+                                ? 'bg-emerald-500 text-neutral-950 hover:bg-emerald-400'
+                                : 'bg-rose-500 text-white hover:bg-rose-400'
+                            }`}
+                          >
+                            {decision === 'approve' ? 'Confirm Approval (Auto-Advance)' : 'Submit Change Request (Auto-Advance)'}
+                          </button>
+                        </div>
+                      )}
+                    </form>
+                  )}
+
+                  {/* Sign-off & Revision Audit History */}
+                  {itemApprovals.length > 0 && (
+                    <div className="border-t border-neutral-800 pt-3 space-y-2">
+                      <div className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
+                        Review History & Audit Trail ({itemApprovals.length})
+                      </div>
+                      <div className="space-y-2 max-h-36 overflow-y-auto pr-1">
+                        {itemApprovals.map((app) => {
+                          const appUser = profiles.find((p) => p.id === app.client_user_id);
+                          const isApproved = app.status === 'approved';
+                          return (
+                            <div
+                              key={app.id}
+                              className={`rounded-lg border p-2 text-xs space-y-1 ${
+                                isApproved
+                                  ? 'border-emerald-800/40 bg-emerald-950/15 text-emerald-200'
+                                  : 'border-rose-800/40 bg-rose-950/15 text-rose-200'
+                              }`}
+                            >
+                              <div className="flex items-center justify-between text-[11px]">
+                                <span className="font-semibold flex items-center gap-1.5">
+                                  {isApproved ? (
+                                    <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
+                                  ) : (
+                                    <AlertCircle className="h-3.5 w-3.5 text-rose-400 shrink-0" />
+                                  )}
+                                  <span>{isApproved ? 'Approved' : 'Changes Requested'}</span>
+                                  <span className="text-neutral-400 font-normal">
+                                    by {appUser?.full_name || 'Client User'}
+                                  </span>
+                                </span>
+                                <span className="text-[10px] text-neutral-500 font-mono">
+                                  {new Date(app.created_at).toLocaleDateString()}
+                                </span>
+                              </div>
+                              {app.comment && (
+                                <p className="text-[11px] text-neutral-300 italic pl-5 leading-relaxed">
+                                  "{app.comment}"
+                                </p>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
               )}
             </div>
 
@@ -324,24 +596,35 @@ export const ClientReviewModal: React.FC<ClientReviewModalProps> = ({ contentId,
                   itemComments.map((comm) => {
                     const author = profiles.find((p) => p.id === comm.user_id);
                     const isClient = author?.role === 'client';
+                    const isRevisionReq = comm.comment.includes('Revision Request');
                     return (
                       <div
                         key={comm.id}
                         className={`rounded-lg p-2.5 text-xs ${
-                          isClient
+                          isRevisionReq
+                            ? 'border border-rose-500/40 bg-rose-950/25'
+                            : isClient
                             ? 'border border-amber-500/20 bg-amber-500/5'
                             : 'border border-neutral-800 bg-neutral-950/60'
                         }`}
                       >
                         <div className="flex items-center justify-between text-[11px] mb-1">
-                          <span className="font-semibold text-neutral-200">
-                            {author?.full_name || 'Team member'} {isClient ? '· Client' : ''}
+                          <span className={`font-semibold flex items-center gap-1.5 ${isRevisionReq ? 'text-rose-400' : 'text-neutral-200'}`}>
+                            {isRevisionReq && <AlertCircle className="h-3.5 w-3.5 text-rose-400 shrink-0" />}
+                            <span>{author?.full_name || 'Team member'} {isClient ? '· Client' : ''}</span>
+                            {isRevisionReq && (
+                              <span className="rounded bg-rose-500/20 px-1.5 py-0.2 text-[9px] font-bold text-rose-300 uppercase tracking-wider">
+                                Change Request
+                              </span>
+                            )}
                           </span>
                           <span className="text-neutral-500 text-[10px]">
                             {new Date(comm.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                           </span>
                         </div>
-                        <p className="text-neutral-300 leading-relaxed">{comm.comment}</p>
+                        <p className={`leading-relaxed ${isRevisionReq ? 'text-rose-100 font-medium' : 'text-neutral-300'}`}>
+                          {comm.comment}
+                        </p>
                       </div>
                     );
                   })

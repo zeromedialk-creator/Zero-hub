@@ -24,7 +24,7 @@ export const EditorDashboard: React.FC<EditorDashboardProps> = ({
   onSelectTask,
 }) => {
   const { currentUser } = useAuth();
-  const { filteredTasks, filteredContentItems, updateTaskStatus, toggleChecklistItem, clients } = useData();
+  const { filteredTasks, filteredContentItems, updateTaskStatus, toggleChecklistItem, clients, approvals } = useData();
 
   const myTasks = filteredTasks.filter((t) => t.assigned_to === currentUser?.id);
   const myContent = filteredContentItems.filter((c) => c.assigned_to === currentUser?.id);
@@ -103,19 +103,32 @@ export const EditorDashboard: React.FC<EditorDashboardProps> = ({
           <p className="mt-1 text-xs text-rose-300/80">
             The client has left feedback requiring adjustments. Check the comments, update the edit, and upload a new version.
           </p>
-          <div className="mt-3 space-y-2">
-            {revisionItems.map((item) => (
-              <div
-                key={item.id}
-                onClick={() => onSelectContent(item.id)}
-                className="flex items-center justify-between p-2.5 rounded-lg bg-neutral-900/90 border border-neutral-800 cursor-pointer hover:border-neutral-700 transition-colors"
-              >
-                <span className="text-xs font-medium text-neutral-200">{item.title}</span>
-                <span className="text-xs text-rose-400 flex items-center gap-1 font-medium">
-                  Review Feedback <ArrowRight className="h-3 w-3" />
-                </span>
-              </div>
-            ))}
+          <div className="mt-3 space-y-2.5">
+            {revisionItems.map((item) => {
+              const app = approvals.find((a) => a.content_id === item.id && a.status === 'changes_requested');
+              return (
+                <div
+                  key={item.id}
+                  onClick={() => onSelectContent(item.id)}
+                  className="p-3 rounded-lg bg-neutral-900/90 border border-neutral-800 cursor-pointer hover:border-neutral-700 transition-colors space-y-1.5"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-semibold text-neutral-200">{item.title}</span>
+                    <span className="text-xs text-rose-400 flex items-center gap-1 font-medium">
+                      Inspect & Upload Cut <ArrowRight className="h-3 w-3" />
+                    </span>
+                  </div>
+                  <div className="rounded bg-neutral-950/70 border border-rose-900/30 p-2 text-[11px] text-rose-200">
+                    <span className="font-semibold text-rose-400 text-[10px] uppercase tracking-wider block mb-0.5">
+                      Client Revision Instructions:
+                    </span>
+                    <p className="italic line-clamp-2">
+                      "{app?.comment || item.notes || 'Please adjust this deliverable based on client feedback.'}"
+                    </p>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
       )}

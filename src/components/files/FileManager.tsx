@@ -17,7 +17,7 @@ import {
 } from 'lucide-react';
 
 export const FileManager: React.FC = () => {
-  const { filteredFiles, filteredClients, filteredProjects, addFile, deleteFile } = useData();
+  const { filteredFiles, filteredClients, filteredProjects, profiles, addFile, deleteFile } = useData();
   const { currentUser, role } = useAuth();
 
   const [selectedClient, setSelectedClient] = useState<string>('all');
@@ -28,7 +28,7 @@ export const FileManager: React.FC = () => {
   // New file form state
   const [newFileName, setNewFileName] = useState('');
   const [newFileType, setNewFileType] = useState('image/png');
-  const [newFileSize, setNewFileSize] = useState('4.2 MB');
+  const [newFileSize, setNewFileSize] = useState('');
   const [newClientId, setNewClientId] = useState(filteredClients[0]?.id || '');
   const [newProjectId, setNewProjectId] = useState(filteredProjects[0]?.id || '');
 
@@ -66,8 +66,8 @@ export const FileManager: React.FC = () => {
       file_name: newFileName.trim(),
       file_path: `${clientSlug}/vault/${newFileName.trim()}`,
       file_type: newFileType,
-      file_size: newFileSize,
-      uploaded_by: currentUser?.id || 'usr_editor_03',
+      file_size: newFileSize.trim() || 'Ready',
+      uploaded_by: currentUser?.id || profiles[0]?.id || 'unknown',
     });
 
     setNewFileName('');

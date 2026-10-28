@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useData } from '../../context/DataContext';
 import { useAuth } from '../../context/AuthContext';
-import { Priority, TaskStatus } from '../../types/database';
+import { Priority, TaskStatus, formatRoleTitle } from '../../types/database';
 import { CheckSquare, X, Plus, Trash2 } from 'lucide-react';
 
 interface TaskFormModalProps {
@@ -15,25 +15,53 @@ export const TaskFormModal: React.FC<TaskFormModalProps> = ({
   onClose,
   defaultProjectId,
 }) => {
-  const { filteredProjects, profiles, addTask } = useData();
+  const { filteredProjects, profiles, addTask, getOptionsByCategory, isSaving } = useData();
   const { currentUser } = useAuth();
 
+  const priorityOptions = getOptionsByCategory('priority');
+
   const [title, setTitle] = useState('');
-  const [projectId, setProjectId] = useState(defaultProjectId || filteredProjects[0]?.id || '');
+  const [projectId, setProjectId] = useState(defaultProjectId || '');
   const [description, setDescription] = useState('');
-  const [assignedTo, setAssignedTo] = useState(
-    profiles.find((p) => p.role === 'editor')?.id || ''
-  );
+  const [assignedTo, setAssignedTo] = useState('');
   const [priority, setPriority] = useState<Priority>('medium');
   const [dueDate, setDueDate] = useState(
     new Date(Date.now() + 5 * 86400000).toISOString().split('T')[0]
   );
-  const [checklist, setChecklist] = useState<{ id: string; text: string; done: boolean }[]>([
-    { id: 'chk_1', text: 'Gather brand assets & audio track', done: false },
-    { id: 'chk_2', text: 'Export rough cut for internal review', done: false },
-  ]);
+  const [checklist, setChecklist] = useState<{ id: string; text: string; done: boolean }[]>([]);
   const [newCheckItem, setNewCheckItem] = useState('');
   const [formError, setFormError] = useState<string | null>(null);
+
+  // Compute effective projectId defensively
+  const effectiveProjectId = useMemo(() => {
+    if (projectId && filteredProjects.some((p) => p.id === projectId)) {
+      return projectId;
+    }
+    if (defaultProjectId && filteredProjects.some((p) => p.id === defaultProjectId)) {
+      return defaultProjectId;
+    }
+    if (filteredProjects.length > 0) {
+      return filteredProjects[0].id;
+    }
+    return '';
+  }, [projectId, defaultProjectId, filteredProjects]);
+
+  // Synchronize state whenever modal opens or filteredProjects changes
+  useEffect(() => {
+    if (isOpen) {
+      setFormError(null);
+      if (defaultProjectId && filteredProjects.some((p) => p.id === defaultProjectId)) {
+        setProjectId(defaultProjectId);
+      } else if (!projectId || !filteredProjects.some((p) => p.id === projectId)) {
+        if (filteredProjects.length > 0) setProjectId(filteredProjects[0].id);
+      }
+
+      const defaultEditor = profiles.find((p) => p.role === 'editor') || profiles[0];
+      if (defaultEditor && !assignedTo) {
+        setAssignedTo(defaultEditor.id);
+      }
+    }
+  }, [isOpen, defaultProjectId, filteredProjects, profiles]);
 
   if (!isOpen) return null;
 
@@ -48,26 +76,36 @@ export const TaskFormModal: React.FC<TaskFormModalProps> = ({
     setChecklist(checklist.filter((item) => item.id !== id));
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormError(null);
-    if (!title.trim() || !projectId) {
-      setFormError('Please fill out all required fields (Task title, associated project).');
+
+    const targetTitle = title.trim();
+    if (!targetTitle) {
+      setFormError('Please enter a task title.');
       return;
     }
 
-    addTask({
-      title: title.trim(),
-      project_id: projectId,
+    const targetProjectId = projectId || effectiveProjectId;
+    if (!targetProjectId) {
+      setFormError('Please select an associated project.');
+      return;
+    }
+
+    await addTask({
+      title: targetTitle,
+      project_id: targetProjectId,
       description: description.trim(),
       assigned_to: assignedTo || undefined,
-      created_by: currentUser?.id || 'usr_pm_02',
+      created_by: currentUser?.id || profiles[0]?.id || 'unknown',
       status: 'todo',
       priority,
       due_date: dueDate,
       checklist,
     });
 
+    setTitle('');
+    setDescription('');
     onClose();
   };
 
@@ -121,7 +159,7 @@ export const TaskFormModal: React.FC<TaskFormModalProps> = ({
               </label>
               <select
                 required
-                value={projectId}
+                value={effectiveProjectId}
                 onChange={(e) => setProjectId(e.target.value)}
                 className="w-full rounded-lg border border-neutral-800 bg-neutral-950 px-3 py-2 text-neutral-200 focus:border-amber-400 focus:outline-hidden"
               >
@@ -146,7 +184,7 @@ export const TaskFormModal: React.FC<TaskFormModalProps> = ({
                   .filter((p) => p.role !== 'client' && p.role !== 'viewer')
                   .map((p) => (
                     <option key={p.id} value={p.id}>
-                      {p.full_name} ({p.role.replace('_', ' ')})
+                      {p.full_name} ({formatRoleTitle(p.role)})
                     </option>
                   ))}
               </select>
@@ -161,10 +199,11 @@ export const TaskFormModal: React.FC<TaskFormModalProps> = ({
                 onChange={(e) => setPriority(e.target.value as Priority)}
                 className="w-full rounded-lg border border-neutral-800 bg-neutral-950 px-3 py-2 text-neutral-200 focus:border-amber-400 focus:outline-hidden"
               >
-                <option value="low">Low</option>
-                <option value="medium">Medium</option>
-                <option value="high">High</option>
-                <option value="urgent">Urgent</option>
+                {priorityOptions.map((opt) => (
+                  <option key={opt.key} value={opt.key}>
+                    {opt.label}
+                  </option>
+                ))}
               </select>
             </div>
             <div>

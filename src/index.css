@@ -14,7 +14,223 @@
   }
 }
 
-/* Custom scrollbars for clean studio feel */
+/* ==========================================================================
+   Light Theme System Variables & Styling
+   ========================================================================== */
+html.light,
+[data-theme="light"],
+body.light {
+  color-scheme: light;
+
+  /* Inverted neutrals for crisp studio light mode */
+  --color-neutral-950: #f8fafc; /* Canvas background (Slate-50) */
+  --color-neutral-900: #ffffff; /* Card / Panel / Header surface (Pure White) */
+  --color-neutral-850: #f1f5f9; /* Elevated or nested surface (Slate-100) */
+  --color-neutral-800: #e2e8f0; /* Default hairlines, borders, card outlines (Slate-200) */
+  --color-neutral-750: #cbd5e1; /* Subtle divider (Slate-300) */
+  --color-neutral-700: #cbd5e1; /* Hover borders & input active strokes (Slate-300) */
+  --color-neutral-600: #94a3b8; /* Muted icons, placeholders (Slate-400) */
+  --color-neutral-500: #64748b; /* Secondary meta text, labels (Slate-500) */
+  --color-neutral-400: #475569; /* Body typography, readable contrast (Slate-600) */
+  --color-neutral-300: #334155; /* Emphasized text, subtitles (Slate-700) */
+  --color-neutral-200: #1e293b; /* Headings, section titles (Slate-800) */
+  --color-neutral-100: #0f172a; /* Main titles, deep charcoal black (Slate-900) */
+  --color-neutral-50: #020617;  /* Deepest contrast (Slate-950) */
+}
+
+/* ==========================================================================
+   Dark Theme System Variables
+   ========================================================================== */
+html.dark,
+[data-theme="dark"],
+body.dark {
+  color-scheme: dark;
+
+  --color-neutral-950: #0a0a0a;
+  --color-neutral-900: #171717;
+  --color-neutral-800: #262626;
+  --color-neutral-700: #404040;
+  --color-neutral-600: #525252;
+  --color-neutral-500: #737373;
+  --color-neutral-400: #a3a3a3;
+  --color-neutral-300: #d4d4d4;
+  --color-neutral-200: #e5e5e5;
+  --color-neutral-100: #f5f5f5;
+  --color-neutral-50: #fafafa;
+}
+
+/* ==========================================================================
+   Light Mode Targeted Visual Refinements
+   ========================================================================== */
+html.light,
+html.light body {
+  background-color: #f8fafc;
+  color: #0f172a;
+}
+
+/* Structural Layouts in Light Mode */
+html.light header {
+  background-color: rgba(255, 255, 255, 0.92) !important;
+  border-bottom-color: #e2e8f0 !important;
+}
+
+html.light aside {
+  background-color: #ffffff !important;
+  border-right-color: #e2e8f0 !important;
+}
+
+html.light main {
+  background-color: #f8fafc !important;
+}
+
+html.light nav.fixed.bottom-0 {
+  background-color: rgba(255, 255, 255, 0.95) !important;
+  border-top-color: #e2e8f0 !important;
+  box-shadow: 0 -4px 14px 0 rgba(15, 23, 42, 0.06) !important;
+}
+
+/* Card Surface Elevation & Shadows */
+html.light .rounded-xl.border,
+html.light .rounded-2xl.border {
+  box-shadow: 0 1px 3px 0 rgb(15 23 42 / 0.05), 0 1px 2px -1px rgb(15 23 42 / 0.04);
+}
+
+html.light .shadow-2xl {
+  box-shadow: 0 20px 25px -5px rgb(15 23 42 / 0.1), 0 8px 10px -6px rgb(15 23 42 / 0.06);
+}
+
+/* Soft hover states across lists, buttons and menus */
+html.light .hover\:bg-neutral-800:hover,
+html.light .hover\:bg-neutral-800\/60:hover,
+html.light .hover\:bg-neutral-900:hover,
+html.light .hover\:bg-neutral-900\/50:hover {
+  background-color: #f1f5f9 !important;
+}
+
+/* High contrast hover text for links that had hover:text-white */
+html.light .hover\:text-white:hover:not(.bg-rose-500):not(.bg-rose-600):not(.bg-blue-600):not(.bg-emerald-600):not([class*="bg-rose-"]) {
+  color: #020617 !important;
+}
+
+/* Contrast enhancement for amber text in light mode */
+html.light .text-amber-400 {
+  color: #d97706 !important;
+}
+
+html.light .text-amber-300 {
+  color: #b45309 !important;
+}
+
+html.light .text-amber-200 {
+  color: #92400e !important;
+}
+
+/* Solid Amber Buttons in Light Mode: Must retain bold contrast dark text */
+html.light button.bg-amber-400,
+html.light button.bg-amber-300,
+html.light a.bg-amber-400,
+html.light a.bg-amber-300,
+html.light .btn-amber {
+  background-color: #f59e0b !important;
+  color: #0f172a !important;
+}
+
+html.light button.bg-amber-400:hover,
+html.light button.bg-amber-300:hover,
+html.light a.bg-amber-400:hover {
+  background-color: #d97706 !important;
+  color: #ffffff !important;
+}
+
+html.light button.bg-amber-400 *,
+html.light button.bg-amber-300 *,
+html.light a.bg-amber-400 *,
+html.light a.bg-amber-300 * {
+  color: inherit !important;
+}
+
+/* Form Controls in Light Mode */
+html.light input:not([type="checkbox"]):not([type="radio"]),
+html.light select,
+html.light textarea {
+  background-color: #ffffff !important;
+  color: #0f172a !important;
+  border-color: #cbd5e1 !important;
+}
+
+html.light input:not([type="checkbox"]):not([type="radio"]):focus,
+html.light select:focus,
+html.light textarea:focus {
+  border-color: #d97706 !important;
+  background-color: #ffffff !important;
+  box-shadow: 0 0 0 2px rgba(217, 119, 6, 0.15) !important;
+}
+
+html.light input::placeholder,
+html.light textarea::placeholder {
+  color: #94a3b8 !important;
+}
+
+/* Modal and Backdrop Handling in Light Mode */
+html.light .bg-black\/70,
+html.light .bg-black\/75,
+html.light .bg-black\/80 {
+  background-color: rgba(15, 23, 42, 0.45) !important;
+  backdrop-filter: blur(4px);
+}
+
+/* Semantic Status Block Tints in Light Mode */
+html.light .bg-emerald-950\/40,
+html.light .bg-emerald-950\/60 {
+  background-color: #ecfdf5 !important;
+  border-color: #a7f3d0 !important;
+}
+
+html.light .bg-emerald-950\/40 .text-emerald-300,
+html.light .bg-emerald-950\/60 .text-emerald-300,
+html.light .text-emerald-300 {
+  color: #047857 !important;
+}
+
+html.light .bg-rose-950\/20,
+html.light .bg-rose-950\/30,
+html.light .bg-rose-950\/40,
+html.light .bg-rose-950\/60 {
+  background-color: #fff1f2 !important;
+  border-color: #fecdd3 !important;
+}
+
+html.light .bg-rose-950\/40 .text-rose-300,
+html.light .bg-rose-950\/60 .text-rose-300,
+html.light .text-rose-300 {
+  color: #be123c !important;
+}
+
+html.light .text-rose-400 {
+  color: #e11d48 !important;
+}
+
+html.light .bg-amber-950\/40,
+html.light .bg-amber-950\/60 {
+  background-color: #fffbeb !important;
+  border-color: #fde68a !important;
+}
+
+/* Kanban column lane vs card contrast in Light Mode */
+html.light [class*="min-w-[280px]"].bg-neutral-900\/40,
+html.light .grid-cols-5 > .bg-neutral-900\/40 {
+  background-color: #f1f5f9 !important;
+  border-color: #e2e8f0 !important;
+}
+
+html.light [class*="min-w-[280px]"] .bg-neutral-950,
+html.light .grid-cols-5 .bg-neutral-950 {
+  background-color: #ffffff !important;
+  border-color: #e2e8f0 !important;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
+}
+
+/* Scrollbars for Light & Dark */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
@@ -31,4 +247,12 @@
 
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(255, 255, 255, 0.22);
+}
+
+html.light ::-webkit-scrollbar-thumb {
+  background: rgba(15, 23, 42, 0.15);
+}
+
+html.light ::-webkit-scrollbar-thumb:hover {
+  background: rgba(15, 23, 42, 0.28);
 }

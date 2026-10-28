@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useData } from '../../context/DataContext';
 import { useAuth } from '../../context/AuthContext';
-import { ProjectStatus, Priority, MonthlyCycle, ContentItem } from '../../types/database';
+import { ProjectStatus, Priority, MonthlyCycle, ContentItem, ProjectDeliverableTarget } from '../../types/database';
 import { StatusBadge } from '../common/StatusBadge';
 import {
   FolderKanban,
@@ -23,6 +23,9 @@ import {
   FileCheck,
   ChevronRight,
   TrendingUp,
+  Target,
+  Edit3,
+  Trash2,
 } from 'lucide-react';
 
 interface ProjectDetailModalProps {
@@ -64,6 +67,8 @@ export const ProjectDetailModal: React.FC<ProjectDetailModalProps> = ({
     recurringTemplates,
     addComment,
     updateProjectStatus,
+    updateProject,
+    getOptionsByCategory,
     updateTaskStatus,
     createNextMonthCycle,
     updateMonthlyCycle,
@@ -83,6 +88,11 @@ export const ProjectDetailModal: React.FC<ProjectDetailModalProps> = ({
   const [selectedCycleIdFilter, setSelectedCycleIdFilter] = useState<string>('all');
   const [cycleCreationSuccess, setCycleCreationSuccess] = useState<string | null>(null);
 
+  // Targets editor state
+  const formatOptions = getOptionsByCategory('content_type');
+  const [isEditingTargets, setIsEditingTargets] = useState(false);
+  const [editingTargets, setEditingTargets] = useState<ProjectDeliverableTarget[]>([]);
+
   if (!isOpen || !projectId) return null;
 
   const project = getProjectById(projectId);
@@ -96,6 +106,12 @@ export const ProjectDetailModal: React.FC<ProjectDetailModalProps> = ({
   const activeCycle = getActiveCycleForProject(projectId) || pCycles[0];
   const activeCycleMetrics = activeCycle ? getCycleMetrics(activeCycle.id) : null;
 
+  // Deliverable targets for one-time projects
+  const oneTimeTargets: ProjectDeliverableTarget[] = (!isRetainer && Array.isArray(project.deliverable_targets))
+    ? project.deliverable_targets
+    : [];
+  const hasOneTimeTargets = oneTimeTargets.length > 0;
+
   const pTasks = tasks.filter((t) => t.project_id === projectId);
   const pAllContent = contentItems.filter((c) => c.project_id === projectId);
   const pFiles = files.filter((f) => f.project_id === projectId);
@@ -104,6 +120,80 @@ export const ProjectDetailModal: React.FC<ProjectDetailModalProps> = ({
   const pActivity = activityLogs.filter(
     (a) => a.entity_id === projectId || a.metadata?.project === project.project_name
   );
+
+  const oneTimeMetrics = useMemo(() => {
+    if (!hasOneTimeTargets) return null;
+    const totalTarget = oneTimeTargets.reduce((sum, t) => sum + (Number(t.target_count) || 0), 0) || pAllContent.length || 1;
+    const completedItems = pAllContent.filter((i) => i.status === 'published' || i.status === 'completed');
+    const completedCount = completedItems.length;
+    const remaining = Math.max(0, totalTarget - completedCount);
+    const progressPercent = totalTarget > 0 ? Math.round((completedCount / totalTarget) * 100) : 0;
+
+    const inProduction = pAllContent.filter((i) => i.status === 'in_production' || i.status === 'internal_review').length;
+    const clientReview = pAllContent.filter((i) => i.status === 'client_review').length;
+
+    const byType = oneTimeTargets.map((t) => {
+      const completedForType = completedItems.filter((i) => {
+        if (t.content_type && i.content_type === t.content_type) return true;
+        const lbl = t.label.toLowerCase();
+        if (lbl.includes('post') && (i.content_type === 'social_media_post' || i.content_type === 'carousel')) return true;
+        if (lbl.includes('reel') && (i.content_type === 'reel' || i.content_type === 'video')) return true;
+        if (lbl.includes('stor') && i.content_type === 'story') return true;
+        return i.title.toLowerCase().includes(lbl);
+      }).length;
+
+      return {
+        type: t.content_type,
+        label: t.label,
+        target: t.target_count,
+        completed: completedForType,
+      };
+    });
+
+    return {
+      target: totalTarget,
+      completed: completedCount,
+      remaining,
+      progressPercent,
+      byType,
+      inProduction,
+      clientReview,
+    };
+  }, [hasOneTimeTargets, oneTimeTargets, pAllContent]);
+
+  const handleStartEditTargets = () => {
+    const existing = project.deliverable_targets && project.deliverable_targets.length > 0
+      ? project.deliverable_targets.map((t) => ({ ...t }))
+      : [
+          { content_type: 'social_media_post', label: 'Posts', target_count: 4 },
+          { content_type: 'reel', label: 'Reels', target_count: 4 },
+        ];
+    setEditingTargets(existing);
+    setIsEditingTargets(true);
+  };
+
+  const handleSaveTargets = async () => {
+    await updateProject(project.id, { deliverable_targets: editingTargets });
+    setIsEditingTargets(false);
+  };
+
+  const handleAddEditTargetRow = () => {
+    setEditingTargets([
+      ...editingTargets,
+      { content_type: 'social_media_post', label: 'Stories', target_count: 4 },
+    ]);
+  };
+
+  const handleRemoveEditTargetRow = (idx: number) => {
+    if (editingTargets.length <= 1) return;
+    setEditingTargets(editingTargets.filter((_, i) => i !== idx));
+  };
+
+  const handleEditTargetChange = (idx: number, field: keyof ProjectDeliverableTarget, val: any) => {
+    setEditingTargets(
+      editingTargets.map((t, i) => (i === idx ? { ...t, [field]: val } : t))
+    );
+  };
 
   // Filtered deliverables according to selected cycle filter
   const displayedContent = pAllContent.filter((item) => {
@@ -118,8 +208,8 @@ export const ProjectDetailModal: React.FC<ProjectDetailModalProps> = ({
     setCommentText('');
   };
 
-  const handleCreateNextMonth = () => {
-    const newCycle = createNextMonthCycle(projectId, activeCycle?.id);
+  const handleCreateNextMonth = async () => {
+    const newCycle = await createNextMonthCycle(projectId, activeCycle?.id);
     if (newCycle) {
       setCycleCreationSuccess(
         `Successfully created ${newCycle.month_name} ${newCycle.year} cycle with carried forward targets! Previous cycles remain unchanged.`
@@ -150,7 +240,7 @@ export const ProjectDetailModal: React.FC<ProjectDetailModalProps> = ({
               <div className="text-[11px] sm:text-xs text-neutral-400 mt-0.5 truncate flex items-center gap-2">
                 <span>Client: <strong className="text-neutral-200">{client?.company_name}</strong></span>
                 <span>·</span>
-                <span>Lead PM: <strong className="text-neutral-200">{pm?.full_name || 'PM A'}</strong></span>
+                <span>Lead PM: <strong className="text-neutral-200">{pm?.full_name || 'Unassigned'}</strong></span>
                 {isRetainer && activeCycle && (
                   <>
                     <span>·</span>
@@ -160,6 +250,18 @@ export const ProjectDetailModal: React.FC<ProjectDetailModalProps> = ({
                     <span>·</span>
                     <span className="text-emerald-400 font-mono">
                       Progress: {activeCycleMetrics?.completed}/{activeCycleMetrics?.target} ({activeCycleMetrics?.progressPercent}%)
+                    </span>
+                  </>
+                )}
+                {!isRetainer && hasOneTimeTargets && oneTimeMetrics && (
+                  <>
+                    <span>·</span>
+                    <span className="text-amber-400 font-semibold">
+                      Scope: {oneTimeMetrics.target} Deliverables
+                    </span>
+                    <span>·</span>
+                    <span className="text-emerald-400 font-mono">
+                      Published: {oneTimeMetrics.completed}/{oneTimeMetrics.target} ({oneTimeMetrics.progressPercent}%)
                     </span>
                   </>
                 )}
@@ -328,6 +430,272 @@ export const ProjectDetailModal: React.FC<ProjectDetailModalProps> = ({
                       </div>
                     </div>
                   </div>
+                </div>
+              )}
+
+              {/* TARGETS CONFIGURATION / EDITOR PANEL (One-Time Projects & Retainers) */}
+              {isEditingTargets && (
+                <div className="p-4 rounded-xl border border-amber-500/40 bg-neutral-950 space-y-3 shadow-lg">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div>
+                      <h3 className="text-xs font-semibold text-amber-300 flex items-center gap-1.5">
+                        <Target className="h-4 w-4" />
+                        Configure Deliverable Targets ({isRetainer ? 'Monthly Retainer' : 'One-Time Project'})
+                      </h3>
+                      <p className="text-[11px] text-neutral-400">
+                        Define deliverable target quotas (e.g. how many Posts, Reels, Stories) for this project
+                      </p>
+                    </div>
+                    <span className="font-mono text-xs font-bold text-amber-400 bg-neutral-900 border border-neutral-800 px-2.5 py-1 rounded-md self-start sm:self-auto">
+                      Total: {editingTargets.reduce((sum, t) => sum + (Number(t.target_count) || 0), 0)} Deliverables
+                    </span>
+                  </div>
+
+                  {/* Preset Buttons */}
+                  <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
+                    <span className="text-[10px] text-neutral-500 font-medium">Quick Presets:</span>
+                    <button
+                      type="button"
+                      onClick={() => setEditingTargets([
+                        { content_type: 'social_media_post', label: 'Posts', target_count: 4 },
+                        { content_type: 'reel', label: 'Reels', target_count: 4 },
+                      ])}
+                      className="text-[10px] bg-neutral-900 hover:bg-neutral-800 text-neutral-300 border border-neutral-800 px-2 py-0.5 rounded transition-colors"
+                    >
+                      4 Posts + 4 Reels
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEditingTargets([
+                        { content_type: 'reel', label: 'Reels / Shorts', target_count: 6 },
+                        { content_type: 'video', label: 'Main Video', target_count: 1 },
+                      ])}
+                      className="text-[10px] bg-neutral-900 hover:bg-neutral-800 text-neutral-300 border border-neutral-800 px-2 py-0.5 rounded transition-colors"
+                    >
+                      6 Reels + 1 Video
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEditingTargets([
+                        { content_type: 'social_media_post', label: 'Posts', target_count: 5 },
+                        { content_type: 'reel', label: 'Reels', target_count: 3 },
+                        { content_type: 'story', label: 'Stories', target_count: 6 },
+                      ])}
+                      className="text-[10px] bg-neutral-900 hover:bg-neutral-800 text-neutral-300 border border-neutral-800 px-2 py-0.5 rounded transition-colors"
+                    >
+                      Multi-Format
+                    </button>
+                  </div>
+
+                  <div className="space-y-2">
+                    {editingTargets.map((row, idx) => (
+                      <div key={idx} className="flex items-center gap-2">
+                        <input
+                          type="text"
+                          value={row.label}
+                          onChange={(e) => handleEditTargetChange(idx, 'label', e.target.value)}
+                          placeholder="e.g. Posts, Reels, Stories..."
+                          className="flex-1 rounded-lg border border-neutral-800 bg-neutral-900 px-3 py-1.5 text-xs text-neutral-200 focus:border-amber-400"
+                        />
+
+                        <select
+                          value={row.content_type}
+                          onChange={(e) => handleEditTargetChange(idx, 'content_type', e.target.value)}
+                          className="w-32 rounded-lg border border-neutral-800 bg-neutral-900 px-2 py-1.5 text-xs text-neutral-300 focus:border-amber-400"
+                        >
+                          {formatOptions.map((opt) => (
+                            <option key={opt.key} value={opt.key}>
+                              {opt.label}
+                            </option>
+                          ))}
+                        </select>
+
+                        <div className="flex items-center gap-1">
+                          <span className="text-[11px] text-neutral-500">Qty:</span>
+                          <input
+                            type="number"
+                            min="1"
+                            max="200"
+                            value={row.target_count}
+                            onChange={(e) => handleEditTargetChange(idx, 'target_count', parseInt(e.target.value) || 1)}
+                            className="w-16 rounded-lg border border-neutral-800 bg-neutral-900 px-2 py-1.5 text-xs font-mono text-center text-amber-400 font-bold focus:border-amber-400"
+                          />
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveEditTargetRow(idx)}
+                          disabled={editingTargets.length <= 1}
+                          className="p-1.5 text-neutral-500 hover:text-rose-400 disabled:opacity-20"
+                          title="Remove row"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="flex items-center justify-between pt-2 border-t border-neutral-800/80">
+                    <button
+                      type="button"
+                      onClick={handleAddEditTargetRow}
+                      className="text-xs text-amber-400 hover:underline flex items-center gap-1 font-medium"
+                    >
+                      <Plus className="h-3 w-3" />
+                      <span>Add Target Type</span>
+                    </button>
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setIsEditingTargets(false)}
+                        className="px-3 py-1.5 rounded-lg border border-neutral-800 hover:bg-neutral-850 text-neutral-300 text-xs transition-colors"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleSaveTargets}
+                        className="px-3.5 py-1.5 rounded-lg bg-amber-400 hover:bg-amber-300 text-neutral-950 font-semibold text-xs transition-colors"
+                      >
+                        Save Targets to Project
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* One-Time Project Deliverable Targets Performance Card */}
+              {!isRetainer && hasOneTimeTargets && oneTimeMetrics && !isEditingTargets && (
+                <div className="rounded-xl border border-amber-500/30 bg-linear-to-r from-amber-950/30 via-neutral-900 to-neutral-950 p-5 space-y-4 shadow-md">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div>
+                      <div className="text-[11px] font-semibold uppercase tracking-wider text-amber-400">
+                        Campaign Deliverable Targets
+                      </div>
+                      <h3 className="text-base font-bold text-neutral-100 mt-0.5">
+                        {client?.company_name} — {project.project_name}
+                      </h3>
+                      <p className="text-xs text-neutral-400">
+                        Scoped deliverable milestones & publishing progress
+                      </p>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <StatusBadge status={project.status} type="project" />
+                      {role !== 'client' && role !== 'viewer' && (
+                        <button
+                          onClick={handleStartEditTargets}
+                          className="rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-200 border border-neutral-700 px-3 py-1.5 text-xs font-medium transition-colors shadow-sm flex items-center gap-1.5"
+                          title="Edit deliverable targets for this project"
+                        >
+                          <Target className="h-3.5 w-3.5 text-amber-400" />
+                          <span>Edit Targets</span>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* High level metrics (Target, Completed, Remaining, Progress) */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
+                    <div className="rounded-lg border border-neutral-800 bg-neutral-950/70 p-3">
+                      <div className="text-[11px] text-neutral-400 uppercase font-medium">Target Scope</div>
+                      <div className="mt-1 font-mono text-2xl font-bold text-neutral-100">
+                        {oneTimeMetrics.target}
+                      </div>
+                      <div className="text-[10px] text-neutral-500">Deliverables contracted</div>
+                    </div>
+
+                    <div className="rounded-lg border border-emerald-900/40 bg-emerald-950/20 p-3">
+                      <div className="text-[11px] text-emerald-400 uppercase font-medium">Completed</div>
+                      <div className="mt-1 font-mono text-2xl font-bold text-emerald-400">
+                        {oneTimeMetrics.completed}
+                      </div>
+                      <div className="text-[10px] text-emerald-500/80">Published & Sign-off</div>
+                    </div>
+
+                    <div className="rounded-lg border border-neutral-800 bg-neutral-950/70 p-3">
+                      <div className="text-[11px] text-neutral-400 uppercase font-medium">Remaining</div>
+                      <div className="mt-1 font-mono text-2xl font-bold text-amber-400">
+                        {oneTimeMetrics.remaining}
+                      </div>
+                      <div className="text-[10px] text-neutral-500">In production / review</div>
+                    </div>
+
+                    <div className="rounded-lg border border-neutral-800 bg-neutral-950/70 p-3">
+                      <div className="text-[11px] text-neutral-400 uppercase font-medium">Progress</div>
+                      <div className="mt-1 font-mono text-2xl font-bold text-sky-400">
+                        {oneTimeMetrics.progressPercent}%
+                      </div>
+                      <div className="text-[10px] text-neutral-500">Overall scope target</div>
+                    </div>
+                  </div>
+
+                  {/* Progress bar */}
+                  <div className="space-y-1">
+                    <div className="flex justify-between text-xs text-neutral-400 font-mono">
+                      <span>Campaign Deliverable Completion</span>
+                      <span>{oneTimeMetrics.completed} of {oneTimeMetrics.target} ({oneTimeMetrics.progressPercent}%)</span>
+                    </div>
+                    <div className="h-2 w-full bg-neutral-800 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-linear-to-r from-amber-500 to-emerald-400 transition-all duration-500"
+                        style={{ width: `${oneTimeMetrics.progressPercent}%` }}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Deliverable Type Breakdown (Posts: 3/5, Reels: 2/4) */}
+                  <div className="border-t border-neutral-800/80 pt-3">
+                    <div className="text-xs font-semibold text-neutral-300 mb-2">
+                      Deliverable Target Breakdown:
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                      {oneTimeMetrics.byType.map((bt) => (
+                        <div
+                          key={bt.label}
+                          className="flex items-center justify-between p-2.5 rounded-lg border border-neutral-800 bg-neutral-950/50 text-xs"
+                        >
+                          <span className="font-semibold text-neutral-200">{bt.label}</span>
+                          <span className="font-mono text-amber-400 font-bold">
+                            {bt.completed} / {bt.target}
+                          </span>
+                        </div>
+                      ))}
+
+                      <div className="flex items-center justify-between p-2.5 rounded-lg border border-neutral-800 bg-neutral-950/50 text-xs">
+                        <span className="text-neutral-400">In Production</span>
+                        <span className="font-mono text-sky-400 font-bold">{oneTimeMetrics.inProduction}</span>
+                      </div>
+
+                      <div className="flex items-center justify-between p-2.5 rounded-lg border border-neutral-800 bg-neutral-950/50 text-xs">
+                        <span className="text-neutral-400">Client Review</span>
+                        <span className="font-mono text-amber-400 font-bold">{oneTimeMetrics.clientReview}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Set Deliverable Targets Prompt if One-Time Project without Targets */}
+              {!isRetainer && !hasOneTimeTargets && !isEditingTargets && role !== 'client' && role !== 'viewer' && (
+                <div className="rounded-xl border border-dashed border-amber-500/30 bg-amber-500/5 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="space-y-0.5">
+                    <div className="text-xs font-semibold text-amber-300 flex items-center gap-1.5">
+                      <Target className="h-4 w-4 text-amber-400" />
+                      <span>Configure Deliverable Targets for this Campaign</span>
+                    </div>
+                    <p className="text-[11px] text-neutral-400">
+                      Specify how many posts, reels, or videos need to be published in this project to track scope and progress.
+                    </p>
+                  </div>
+                  <button
+                    onClick={handleStartEditTargets}
+                    className="rounded-lg bg-amber-400 px-3.5 py-1.5 text-xs font-semibold text-neutral-950 hover:bg-amber-300 transition-colors whitespace-nowrap self-start sm:self-auto flex items-center gap-1"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    <span>Set Deliverable Targets</span>
+                  </button>
                 </div>
               )}
 

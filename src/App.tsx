@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { DataProvider, useData } from './context/DataContext';
+import { ThemeProvider } from './context/ThemeContext';
 import { Header } from './components/layout/Header';
 import { Sidebar, NavigationTab } from './components/layout/Sidebar';
 import { MobileNav } from './components/layout/MobileNav';
@@ -12,6 +13,8 @@ import { EditorDashboard } from './components/dashboard/EditorDashboard';
 import { ClientDashboard } from './components/dashboard/ClientDashboard';
 import { CopyEditorDashboard } from './components/dashboard/CopyEditorDashboard';
 import { ViewerDashboard } from './components/dashboard/ViewerDashboard';
+import { QCDashboard } from './components/dashboard/QCDashboard';
+import { VideographerDashboard } from './components/dashboard/VideographerDashboard';
 
 // Sections
 import { ClientList } from './components/clients/ClientList';
@@ -26,7 +29,7 @@ import { AdminSettings } from './components/admin/AdminSettings';
 // Modals
 import { LoginView } from './components/auth/LoginView';
 import { GlobalSearchModal } from './components/search/GlobalSearchModal';
-import { SupabaseMigrationModal } from './components/admin/SupabaseMigrationModal';
+import { DatabaseConfigModal } from './components/admin/DatabaseConfigModal';
 import { ClientDetailModal } from './components/clients/ClientDetailModal';
 import { ClientFormModal } from './components/clients/ClientFormModal';
 import { ProjectDetailModal } from './components/projects/ProjectDetailModal';
@@ -36,15 +39,17 @@ import { ContentFormModal } from './components/content/ContentFormModal';
 import { ClientReviewModal } from './components/content/ClientReviewModal';
 import { VersionUploadModal } from './components/content/VersionUploadModal';
 import { TaskFormModal } from './components/tasks/TaskFormModal';
+import { ContentStatus } from './types/database';
 
 const MainApp: React.FC = () => {
   const { currentUser, role } = useAuth();
+  const { dbError, clearDbError } = useData();
   const [currentTab, setCurrentTab] = useState<NavigationTab>('dashboard');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   // Modal states
   const [searchOpen, setSearchOpen] = useState(false);
-  const [supabaseModalOpen, setSupabaseModalOpen] = useState(false);
+  const [dbModalOpen, setDbModalOpen] = useState(false);
 
   const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
   const [createClientOpen, setCreateClientOpen] = useState(false);
@@ -54,6 +59,7 @@ const MainApp: React.FC = () => {
 
   const [selectedContentId, setSelectedContentId] = useState<string | null>(null);
   const [createContentOpen, setCreateContentOpen] = useState(false);
+  const [createContentDefaultStatus, setCreateContentDefaultStatus] = useState<ContentStatus>('idea');
   const [clientReviewContentId, setClientReviewContentId] = useState<string | null>(null);
   const [versionUploadContentId, setVersionUploadContentId] = useState<string | null>(null);
 
@@ -94,7 +100,25 @@ const MainApp: React.FC = () => {
             onSelectContent={setSelectedContentId}
           />
         );
+      case 'qc':
+        return (
+          <QCDashboard
+            onNavigateTab={setCurrentTab}
+            onSelectContent={setSelectedContentId}
+          />
+        );
+      case 'videographer':
+        return (
+          <VideographerDashboard
+            onNavigateTab={setCurrentTab}
+            onSelectContent={setSelectedContentId}
+            onSelectTask={(id) => setCurrentTab('tasks')}
+          />
+        );
       case 'editor':
+      case 'graphic_designer':
+      case 'audio_engineer':
+      case 'colorist':
         return (
           <EditorDashboard
             onNavigateTab={setCurrentTab}
@@ -112,6 +136,8 @@ const MainApp: React.FC = () => {
           />
         );
       case 'copy_editor':
+      case 'strategist':
+      case 'social_media_manager':
         return (
           <CopyEditorDashboard
             onNavigateTab={setCurrentTab}
@@ -135,7 +161,7 @@ const MainApp: React.FC = () => {
       {/* Top Bar Header */}
       <Header
         onOpenSearch={() => setSearchOpen(true)}
-        onOpenSupabaseModal={() => setSupabaseModalOpen(true)}
+        onOpenDbModal={() => setDbModalOpen(true)}
         onSelectContent={(id) => setSelectedContentId(id)}
         onToggleMobileMenu={() => setMobileMenuOpen((prev) => !prev)}
         isMobileMenuOpen={mobileMenuOpen}
@@ -154,6 +180,28 @@ const MainApp: React.FC = () => {
         {/* Viewport Content Canvas */}
         <main className="flex-1 overflow-y-auto p-3.5 sm:p-6 md:p-8 pb-32 md:pb-8 bg-neutral-950 overscroll-y-contain">
           <div className="mx-auto max-w-7xl">
+            {dbError && role === 'super_admin' && (
+              <div className="mb-4 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3.5 sm:p-4 text-xs text-amber-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                <div className="flex items-start gap-2.5">
+                  <span className="font-semibold text-amber-300 shrink-0">⚠️ Database Notice:</span>
+                  <span>{dbError}</span>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    onClick={() => setDbModalOpen(true)}
+                    className="rounded-lg bg-amber-400 px-3 py-1 font-semibold text-neutral-950 hover:bg-amber-300 transition-colors"
+                  >
+                    Open RLS Fix / SQL
+                  </button>
+                  <button
+                    onClick={clearDbError}
+                    className="text-neutral-400 hover:text-neutral-200 px-1 font-bold"
+                  >
+                    ✕
+                  </button>
+                </div>
+              </div>
+            )}
             {currentTab === 'dashboard' && renderDashboard()}
             {currentTab === 'clients' && (
               <ClientList
@@ -170,7 +218,10 @@ const MainApp: React.FC = () => {
             {currentTab === 'content' && (
               <ContentPipeline
                 onSelectContent={setSelectedContentId}
-                onOpenCreateModal={() => setCreateContentOpen(true)}
+                onOpenCreateModal={(initialStatus?: ContentStatus) => {
+                  setCreateContentDefaultStatus(initialStatus || 'idea');
+                  setCreateContentOpen(true);
+                }}
                 onOpenReviewModal={setClientReviewContentId}
                 onOpenVersionModal={setVersionUploadContentId}
               />
@@ -181,6 +232,9 @@ const MainApp: React.FC = () => {
                   setCreateTaskDefaultProjectId(undefined);
                   setCreateTaskOpen(true);
                 }}
+                onSelectContent={setSelectedContentId}
+                onSelectProject={setSelectedProjectId}
+                onOpenVersionModal={setVersionUploadContentId}
               />
             )}
             {currentTab === 'calendar' && (
@@ -197,7 +251,7 @@ const MainApp: React.FC = () => {
               />
             )}
             {currentTab === 'settings' && (
-              <AdminSettings onOpenSupabaseModal={() => setSupabaseModalOpen(true)} />
+              <AdminSettings onOpenDbModal={() => setDbModalOpen(true)} />
             )}
           </div>
         </main>
@@ -219,9 +273,9 @@ const MainApp: React.FC = () => {
         onSelectContent={setSelectedContentId}
       />
 
-      <SupabaseMigrationModal
-        isOpen={supabaseModalOpen}
-        onClose={() => setSupabaseModalOpen(false)}
+      <DatabaseConfigModal
+        isOpen={dbModalOpen}
+        onClose={() => setDbModalOpen(false)}
       />
 
       <ClientDetailModal
@@ -263,14 +317,17 @@ const MainApp: React.FC = () => {
 
       <ContentFormModal
         isOpen={createContentOpen}
+        defaultStatus={createContentDefaultStatus}
         onClose={() => setCreateContentOpen(false)}
       />
 
-      <ClientReviewModal
-        contentId={clientReviewContentId}
-        isOpen={!!clientReviewContentId}
-        onClose={() => setClientReviewContentId(null)}
-      />
+      {role === 'client' && (
+        <ClientReviewModal
+          contentId={clientReviewContentId}
+          isOpen={!!clientReviewContentId}
+          onClose={() => setClientReviewContentId(null)}
+        />
+      )}
 
       <VersionUploadModal
         contentId={versionUploadContentId}
@@ -283,16 +340,47 @@ const MainApp: React.FC = () => {
         defaultProjectId={createTaskDefaultProjectId}
         onClose={() => setCreateTaskOpen(false)}
       />
+
+      {/* Database Feedback Toast */}
+      {dbError && (
+        <div className="fixed bottom-4 right-4 z-50 max-w-md rounded-xl border border-amber-500/40 bg-neutral-900/95 p-4 shadow-2xl backdrop-blur-md text-xs text-neutral-200 space-y-2">
+          <div className="flex items-start justify-between gap-3">
+            <div className="font-semibold text-amber-400">
+              Database Status Notice
+            </div>
+            <button
+              onClick={clearDbError}
+              className="text-neutral-400 hover:text-neutral-200 font-bold px-1"
+            >
+              ✕
+            </button>
+          </div>
+          <p className="text-neutral-300 leading-relaxed">{dbError}</p>
+          {role === 'super_admin' && (
+            <button
+              onClick={() => {
+                clearDbError();
+                setDbModalOpen(true);
+              }}
+              className="text-[11px] font-semibold text-amber-400 hover:underline block pt-1"
+            >
+              View Complete PostgreSQL Schema &gt;
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 };
 
 export default function App() {
   return (
-    <AuthProvider>
-      <DataProvider>
-        <MainApp />
-      </DataProvider>
-    </AuthProvider>
+    <ThemeProvider>
+      <AuthProvider>
+        <DataProvider>
+          <MainApp />
+        </DataProvider>
+      </AuthProvider>
+    </ThemeProvider>
   );
 }

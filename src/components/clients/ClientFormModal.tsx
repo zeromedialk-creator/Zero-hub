@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useData } from '../../context/DataContext';
-import { Building2, X } from 'lucide-react';
+import { formatRoleTitle } from '../../types/database';
+import { Building2, X, Users, UserCheck } from 'lucide-react';
 
 interface ClientFormModalProps {
   isOpen: boolean;
@@ -8,7 +9,7 @@ interface ClientFormModalProps {
 }
 
 export const ClientFormModal: React.FC<ClientFormModalProps> = ({ isOpen, onClose }) => {
-  const { addClient, profiles } = useData();
+  const { addClient, createUserProfile, profiles } = useData();
 
   const [companyName, setCompanyName] = useState('');
   const [contactPerson, setContactPerson] = useState('');
@@ -17,6 +18,7 @@ export const ClientFormModal: React.FC<ClientFormModalProps> = ({ isOpen, onClos
   const [address, setAddress] = useState('');
   const [industry, setIndustry] = useState('');
   const [notes, setNotes] = useState('');
+  const [createPortalLogin, setCreatePortalLogin] = useState(true);
   const [assignedPmId, setAssignedPmId] = useState(
     profiles.find((p) => p.role === 'project_manager')?.id || ''
   );
@@ -24,7 +26,7 @@ export const ClientFormModal: React.FC<ClientFormModalProps> = ({ isOpen, onClos
 
   if (!isOpen) return null;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormError(null);
     if (!companyName.trim() || !contactPerson.trim() || !email.trim()) {
@@ -32,17 +34,31 @@ export const ClientFormModal: React.FC<ClientFormModalProps> = ({ isOpen, onClos
       return;
     }
 
-    addClient({
+    const created = await addClient({
       company_name: companyName.trim(),
       contact_person: contactPerson.trim(),
       email: email.trim(),
-      phone: phone.trim() || '+1 (555) 000-0000',
+      phone: phone.trim() || '',
       address: address.trim(),
-      industry: industry.trim() || 'Digital Marketing & Commerce',
+      industry: industry.trim() || 'General',
       notes: notes.trim(),
       status: 'active',
       assigned_pm_id: assignedPmId || undefined,
     });
+
+    if (created && createPortalLogin) {
+      await createUserProfile(
+        {
+          full_name: contactPerson.trim(),
+          email: email.trim(),
+          job_title: 'Lead Client Representative',
+          role: 'client',
+          status: 'active',
+          phone: phone.trim() || '',
+        },
+        created.id
+      );
+    }
 
     onClose();
   };
@@ -141,7 +157,7 @@ export const ClientFormModal: React.FC<ClientFormModalProps> = ({ isOpen, onClos
                 type="text"
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
-                placeholder="+1 (555) 012-3456"
+                placeholder="e.g. +94 77 123 4567"
                 className="w-full rounded-lg border border-neutral-800 bg-neutral-950 px-3 py-2 text-neutral-100 placeholder-neutral-600 focus:border-amber-400 focus:outline-hidden"
               />
             </div>
@@ -174,7 +190,7 @@ export const ClientFormModal: React.FC<ClientFormModalProps> = ({ isOpen, onClos
                   .filter((p) => p.role === 'project_manager' || p.role === 'super_admin')
                   .map((p) => (
                     <option key={p.id} value={p.id}>
-                      {p.full_name} ({p.role.replace('_', ' ')})
+                      {p.full_name} ({formatRoleTitle(p.role)})
                     </option>
                   ))}
               </select>
@@ -192,6 +208,26 @@ export const ClientFormModal: React.FC<ClientFormModalProps> = ({ isOpen, onClos
               placeholder="Brand aesthetics, target demographics, delivery turnaround rules, social handles..."
               className="w-full rounded-lg border border-neutral-800 bg-neutral-950 p-3 text-neutral-100 placeholder-neutral-600 focus:border-amber-400 focus:outline-hidden"
             />
+          </div>
+
+          {/* Portal User Link Option */}
+          <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 flex items-start gap-3">
+            <input
+              type="checkbox"
+              id="createPortalLogin"
+              checked={createPortalLogin}
+              onChange={(e) => setCreatePortalLogin(e.target.checked)}
+              className="mt-0.5 rounded border-neutral-700 bg-neutral-900 text-amber-400 focus:ring-amber-400"
+            />
+            <label htmlFor="createPortalLogin" className="text-xs text-neutral-300 cursor-pointer select-none space-y-0.5">
+              <span className="font-semibold text-neutral-100 flex items-center gap-1.5">
+                <Users className="h-3.5 w-3.5 text-amber-400" />
+                Also provision Client Portal login for contact person ({email || 'email above'})
+              </span>
+              <p className="text-[11px] text-neutral-400">
+                Automatically links this user account to {companyName || 'this company'} so they can log in, view projects, and approve deliverables immediately.
+              </p>
+            </label>
           </div>
 
           <div className="flex items-center justify-end gap-3 pt-4 border-t border-neutral-800">

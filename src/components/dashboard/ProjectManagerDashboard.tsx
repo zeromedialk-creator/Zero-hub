@@ -36,6 +36,7 @@ export const ProjectManagerDashboard: React.FC<ProjectManagerDashboardProps> = (
     projects,
     tasks,
     contentItems,
+    approvals,
     profiles,
     monthlyCycles,
     getDeadlineWarnings,
@@ -95,8 +96,8 @@ export const ProjectManagerDashboard: React.FC<ProjectManagerDashboardProps> = (
     (t) => myProjectIds.includes(t.project_id) && t.status !== 'completed'
   );
 
-  const handleCreateNextMonth = (projectId: string, currentCycleId?: string) => {
-    const newCycle = createNextMonthCycle(projectId, currentCycleId);
+  const handleCreateNextMonth = async (projectId: string, currentCycleId?: string) => {
+    const newCycle = await createNextMonthCycle(projectId, currentCycleId);
     if (newCycle) {
       setSelectedCycleId(newCycle.id);
     }
@@ -138,6 +139,45 @@ export const ProjectManagerDashboard: React.FC<ProjectManagerDashboardProps> = (
           </button>
         </div>
       </div>
+
+      {/* CLIENT REVISION REQUESTS ALERT FOR PM */}
+      {changesRequestedContent.length > 0 && (
+        <div className="rounded-xl border border-rose-500/40 bg-linear-to-r from-rose-950/40 via-neutral-900 to-neutral-950 p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 text-rose-400 font-semibold text-xs uppercase tracking-wider">
+              <AlertCircle className="h-4 w-4 shrink-0 text-rose-400" />
+              <span>Client Revisions Requested ({changesRequestedContent.length})</span>
+            </div>
+            <span className="text-xs font-mono text-rose-400 font-medium">Needs PM Attention</span>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+            {changesRequestedContent.map((item) => {
+              const app = approvals.find((a) => a.content_id === item.id && a.status === 'changes_requested');
+              const assigned = profiles.find((p) => p.id === item.assigned_to);
+              return (
+                <div
+                  key={item.id}
+                  onClick={() => onSelectContent(item.id)}
+                  className="p-3 rounded-lg border border-rose-500/30 bg-rose-950/20 hover:bg-rose-950/40 cursor-pointer transition-colors space-y-1.5"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <span className="text-neutral-100 font-semibold truncate">{item.title}</span>
+                    <StatusBadge status={item.status} />
+                  </div>
+                  <p className="text-[11px] text-rose-200/90 italic line-clamp-2 bg-neutral-950/60 p-2 rounded border border-rose-900/40">
+                    "{app?.comment || item.notes || 'Client requested revisions'}"
+                  </p>
+                  <div className="text-[10px] text-neutral-400 flex justify-between items-center pt-0.5">
+                    <span>Assigned: <strong className="text-neutral-200">{assigned?.full_name || 'Unassigned'}</strong></span>
+                    <span className="text-rose-400 font-medium hover:underline">Inspect Request &rarr;</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* DEADLINE WARNING NOTICES (Section 8) */}
       {(publishingNotApproved.length > 0 || overdueContent.length > 0) && (
@@ -212,7 +252,7 @@ export const ProjectManagerDashboard: React.FC<ProjectManagerDashboardProps> = (
                 {retainerClient?.company_name} — {activeCycle.month_name} {activeCycle.year}
               </h2>
               <p className="text-xs text-neutral-400">
-                Project: {selectedRetainer.project_name} · Lead PM: {profiles.find((p) => p.id === selectedRetainer.project_manager_id)?.full_name || 'PM A'}
+                Project: {selectedRetainer.project_name} · Lead PM: {profiles.find((p) => p.id === selectedRetainer.project_manager_id)?.full_name || 'Unassigned'}
               </p>
             </div>
 
@@ -438,18 +478,29 @@ export const ProjectManagerDashboard: React.FC<ProjectManagerDashboardProps> = (
               [...awaitingReviewContent, ...changesRequestedContent].slice(0, 5).map((item) => {
                 const client = clients.find((c) => c.id === item.client_id);
                 const assigned = profiles.find((p) => p.id === item.assigned_to);
+                const app = approvals.find((a) => a.content_id === item.id && a.status === 'changes_requested');
 
                 return (
                   <div
                     key={item.id}
                     onClick={() => onSelectContent(item.id)}
-                    className="p-3 rounded-lg border border-neutral-800/80 bg-neutral-950/40 hover:bg-neutral-800/50 cursor-pointer transition-colors"
+                    className="p-3 rounded-lg border border-neutral-800/80 bg-neutral-950/40 hover:bg-neutral-800/50 cursor-pointer transition-colors space-y-1.5"
                   >
                     <div className="flex items-start justify-between gap-2">
                       <div className="text-xs font-semibold text-neutral-200 truncate flex-1">{item.title}</div>
                       <div className="shrink-0"><StatusBadge status={item.status} /></div>
                     </div>
-                    <div className="mt-2 flex flex-col sm:flex-row sm:items-center justify-between gap-1 text-[11px] text-neutral-400">
+                    {item.status === 'changes_requested' && (
+                      <div className="rounded bg-rose-950/40 border border-rose-900/40 p-2 text-[11px] text-rose-200 space-y-0.5">
+                        <span className="font-semibold text-rose-400 text-[10px] uppercase tracking-wider block">
+                          Client Revision Note:
+                        </span>
+                        <p className="italic line-clamp-2">
+                          "{app?.comment || item.notes || 'Please make adjustments'}"
+                        </p>
+                      </div>
+                    )}
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 text-[11px] text-neutral-400">
                       <span className="truncate">{client?.company_name} · Assigned to {assigned?.full_name || 'Unassigned'}</span>
                       <span className="font-mono text-neutral-500 shrink-0">Due {item.due_date}</span>
                     </div>

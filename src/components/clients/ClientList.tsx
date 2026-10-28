@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useData } from '../../context/DataContext';
 import { useAuth } from '../../context/AuthContext';
 import { Client } from '../../types/database';
-import { Building2, Plus, Search, Archive, ExternalLink, Mail, Phone, MapPin, ArrowRight } from 'lucide-react';
+import { Building2, Plus, Search, Archive, ExternalLink, Mail, Phone, MapPin, ArrowRight, Users } from 'lucide-react';
 import { StatusBadge } from '../common/StatusBadge';
 
 interface ClientListProps {
@@ -11,7 +11,7 @@ interface ClientListProps {
 }
 
 export const ClientList: React.FC<ClientListProps> = ({ onSelectClient, onOpenCreateClientModal }) => {
-  const { filteredClients, projects, contentItems, profiles } = useData();
+  const { filteredClients, projects, contentItems, profiles, getUsersForClient } = useData();
   const { role } = useAuth();
 
   const [search, setSearch] = useState('');
@@ -138,11 +138,24 @@ export const ClientList: React.FC<ClientListProps> = ({ onSelectClient, onOpenCr
                       <Mail className="h-3.5 w-3.5 text-neutral-500" />
                       <span className="truncate">{c.email}</span>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <Phone className="h-3.5 w-3.5 text-neutral-500" />
-                      <span>{c.phone}</span>
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <Phone className="h-3.5 w-3.5 text-neutral-500" />
+                        <span>{c.phone}</span>
+                      </div>
+                      {(() => {
+                        const portalUsers = getUsersForClient(c.id);
+                        return (
+                          <div className="flex items-center gap-1 text-[11px]">
+                            <Users className="h-3 w-3 text-amber-400" />
+                            <span className={portalUsers.length > 0 ? 'text-amber-300 font-medium' : 'text-neutral-500'}>
+                              {portalUsers.length} {portalUsers.length === 1 ? 'user' : 'users'}
+                            </span>
+                          </div>
+                        );
+                      })()}
                     </div>
-                    <div className="text-[11px] text-neutral-500 pt-1">
+                    <div className="text-[11px] text-neutral-500 pt-0.5">
                       Lead Contact: <strong className="text-neutral-300">{c.contact_person}</strong>
                     </div>
                   </div>

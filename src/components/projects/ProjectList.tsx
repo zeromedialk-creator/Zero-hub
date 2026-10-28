@@ -137,8 +137,16 @@ export const ProjectList: React.FC<ProjectListProps> = ({ onSelectProject, onOpe
             const activeCycle = isRetainer ? getActiveCycleForProject(p.id) : null;
             const cycleMetrics = activeCycle ? getCycleMetrics(activeCycle.id) : null;
 
+            const targets = p.deliverable_targets || [];
+            const hasTargets = targets.length > 0;
+            const totalTargetCount = targets.reduce((sum, t) => sum + (Number(t.target_count) || 0), 0);
+            const completedContentCount = pContent.filter((c) => c.status === 'published' || c.status === 'completed').length;
+            const deliverableProgress = totalTargetCount > 0 ? Math.round((completedContentCount / totalTargetCount) * 100) : 0;
+
             const progress = isRetainer && cycleMetrics
               ? cycleMetrics.progressPercent
+              : !isRetainer && hasTargets && totalTargetCount > 0
+              ? deliverableProgress
               : pTasks.length > 0
               ? Math.round((completedTasks.length / pTasks.length) * 100)
               : 0;
@@ -169,6 +177,21 @@ export const ProjectList: React.FC<ProjectListProps> = ({ onSelectProject, onOpe
                   <p className="mt-3 text-xs text-neutral-400 line-clamp-2 leading-relaxed">
                     {p.description}
                   </p>
+
+                  {/* Target Chips for One-Time & Retainer Projects */}
+                  {hasTargets && (
+                    <div className="flex items-center gap-1.5 flex-wrap mt-3 pt-2 border-t border-neutral-800/60">
+                      <span className="text-[10px] text-neutral-500 font-medium">Targets:</span>
+                      {targets.map((t, idx) => (
+                        <span
+                          key={idx}
+                          className="rounded bg-neutral-950 border border-neutral-800 px-2 py-0.5 text-[10px] text-amber-300 font-medium flex items-center gap-1"
+                        >
+                          <strong className="font-mono text-amber-400 font-bold">{t.target_count}</strong> {t.label}
+                        </span>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
                 <div className="border-t border-neutral-800/80 pt-3 space-y-3">
@@ -185,6 +208,8 @@ export const ProjectList: React.FC<ProjectListProps> = ({ onSelectProject, onOpe
                       <span>
                         {isRetainer && cycleMetrics
                           ? `Deliverables (${cycleMetrics.completed}/${cycleMetrics.target})`
+                          : !isRetainer && hasTargets && totalTargetCount > 0
+                          ? `Deliverables (${completedContentCount}/${totalTargetCount})`
                           : `Task Progress (${completedTasks.length}/${pTasks.length})`}
                       </span>
                       <span className="font-mono tabular-nums">{progress}%</span>

@@ -77,7 +77,13 @@ export const ActivityTimeline: React.FC<ActivityTimelineProps> = ({ onSelectProj
 
                     <p className="text-xs text-neutral-300 font-medium">{log.action}</p>
 
-                    {log.metadata && Object.keys(log.metadata).length > 0 && (
+                    {log.metadata?.comment && (
+                      <div className="rounded bg-rose-950/30 border border-rose-900/40 p-2 text-xs text-rose-200 mt-1 italic">
+                        "{log.metadata.comment}"
+                      </div>
+                    )}
+
+                    {log.metadata && Object.keys(log.metadata).length > 0 && !log.metadata?.comment && (
                       <div className="text-[11px] font-mono text-neutral-500 bg-neutral-900/60 p-2 rounded mt-1.5 overflow-x-auto">
                         {JSON.stringify(log.metadata, null, 2)}
                       </div>

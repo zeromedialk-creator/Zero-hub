@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useData } from '../../context/DataContext';
-import { Priority, ProjectStatus, ProjectType, ProjectDeliverableTarget } from '../../types/database';
-import { FolderKanban, X, Plus, Trash2, CalendarDays, Sparkles } from 'lucide-react';
+import { Priority, ProjectStatus, ProjectType, ProjectDeliverableTarget, formatRoleTitle } from '../../types/database';
+import { FolderKanban, X, Plus, Trash2, CalendarDays, Sparkles, AlertTriangle } from 'lucide-react';
 
 interface ProjectFormModalProps {
   isOpen: boolean;
@@ -14,29 +14,93 @@ export const ProjectFormModal: React.FC<ProjectFormModalProps> = ({
   onClose,
   defaultClientId,
 }) => {
-  const { filteredClients, profiles, addProject } = useData();
+  const { filteredClients, profiles, addProject, getOptionsByCategory, isSaving } = useData();
+
+  const formatOptions = getOptionsByCategory('content_type');
+  const priorityOptions = getOptionsByCategory('priority');
+
+  const today = new Date();
+  const todayStr = today.toISOString().split('T')[0];
+  const defaultDeadline = new Date(today.getTime() + 60 * 86400000).toISOString().split('T')[0];
 
   const [projectName, setProjectName] = useState('');
   const [projectType, setProjectType] = useState<ProjectType>('monthly_retainer');
-  const [clientId, setClientId] = useState(defaultClientId || filteredClients[0]?.id || '');
+  const [clientId, setClientId] = useState(defaultClientId || '');
   const [description, setDescription] = useState('');
   const [priority, setPriority] = useState<Priority>('high');
-  const [startDate, setStartDate] = useState('2026-10-01');
-  const [deadline, setDeadline] = useState('2026-12-31');
-  const [pmId, setPmId] = useState(
-    profiles.find((p) => p.role === 'project_manager')?.id || profiles[0]?.id || ''
-  );
-  const [selectedMemberIds, setSelectedMemberIds] = useState<string[]>([
-    profiles.find((p) => p.role === 'editor')?.id || '',
-  ]);
+  const [startDate, setStartDate] = useState(todayStr);
+  const [deadline, setDeadline] = useState(defaultDeadline);
+  const [pmId, setPmId] = useState('');
+  const [selectedMemberIds, setSelectedMemberIds] = useState<string[]>([]);
 
-  // Flexible Deliverable Targets for Monthly Retainer (Section 3 requirement)
+  // Flexible Deliverable Targets for Monthly Retainer
   const [targets, setTargets] = useState<ProjectDeliverableTarget[]>([
-    { content_type: 'social_media_post', label: 'Posts', target_count: 5 },
+    { content_type: 'social_media_post', label: 'Posts', target_count: 4 },
     { content_type: 'reel', label: 'Reels', target_count: 4 },
   ]);
 
   const [formError, setFormError] = useState<string | null>(null);
+
+  // Available Project Managers or Team Leads
+  const availablePms = useMemo(() => {
+    const pms = profiles.filter((p) => p.role === 'project_manager' || p.role === 'super_admin');
+    if (pms.length > 0) return pms;
+    const staff = profiles.filter((p) => p.role !== 'client' && p.role !== 'viewer');
+    if (staff.length > 0) return staff;
+    return profiles;
+  }, [profiles]);
+
+  // Compute effective clientId defensively so UI selection & submit payload always agree
+  const effectiveClientId = useMemo(() => {
+    if (clientId && filteredClients.some((c) => c.id === clientId)) {
+      return clientId;
+    }
+    if (defaultClientId && filteredClients.some((c) => c.id === defaultClientId)) {
+      return defaultClientId;
+    }
+    if (filteredClients.length > 0) {
+      return filteredClients[0].id;
+    }
+    return '';
+  }, [clientId, defaultClientId, filteredClients]);
+
+  // Compute effective pmId defensively
+  const effectivePmId = useMemo(() => {
+    if (pmId && availablePms.some((p) => p.id === pmId)) {
+      return pmId;
+    }
+    if (availablePms.length > 0) {
+      return availablePms[0].id;
+    }
+    return '';
+  }, [pmId, availablePms]);
+
+  // Synchronize state whenever modal is opened or client/profile lists update
+  useEffect(() => {
+    if (isOpen) {
+      setFormError(null);
+      if (defaultClientId && filteredClients.some((c) => c.id === defaultClientId)) {
+        setClientId(defaultClientId);
+      } else if (!clientId || !filteredClients.some((c) => c.id === clientId)) {
+        if (filteredClients.length > 0) {
+          setClientId(filteredClients[0].id);
+        }
+      }
+
+      if (!pmId || !availablePms.some((p) => p.id === pmId)) {
+        if (availablePms.length > 0) {
+          setPmId(availablePms[0].id);
+        }
+      }
+
+      if (selectedMemberIds.length === 0) {
+        const defaultEditor = profiles.find((p) => p.role === 'editor');
+        if (defaultEditor) {
+          setSelectedMemberIds([defaultEditor.id]);
+        }
+      }
+    }
+  }, [isOpen, defaultClientId, filteredClients, availablePms, profiles]);
 
   if (!isOpen) return null;
 
@@ -69,33 +133,50 @@ export const ProjectFormModal: React.FC<ProjectFormModalProps> = ({
     );
   };
 
-  const totalMonthlyTarget = targets.reduce((sum, t) => sum + (Number(t.target_count) || 0), 0);
+  const totalTargets = targets.reduce((sum, t) => sum + (Number(t.target_count) || 0), 0);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormError(null);
-    if (!projectName.trim() || !clientId) {
-      setFormError('Please fill out all required fields (Project name, client brand).');
+
+    const trimmedName = projectName.trim();
+    if (!trimmedName) {
+      setFormError('Please enter a project name.');
       return;
     }
 
-    addProject(
+    const targetClientId = clientId || effectiveClientId;
+    if (!targetClientId) {
+      if (filteredClients.length === 0) {
+        setFormError('No client brands available. Please create a client brand first before creating a project.');
+      } else {
+        setFormError('Please select a client brand.');
+      }
+      return;
+    }
+
+    const targetPmId = pmId || effectivePmId;
+
+    await addProject(
       {
-        project_name: projectName.trim(),
+        project_name: trimmedName,
         project_type: projectType,
-        client_id: clientId,
-        project_manager_id: pmId,
+        client_id: targetClientId,
+        project_manager_id: targetPmId || undefined,
         description: description.trim(),
         status: 'active',
         priority,
         start_date: startDate,
         deadline,
-        deliverable_targets: projectType === 'monthly_retainer' ? targets : undefined,
+        deliverable_targets: targets,
       },
       selectedMemberIds.filter(Boolean),
-      projectType === 'monthly_retainer' ? targets : undefined
+      targets
     );
 
+    // Reset transient fields
+    setProjectName('');
+    setDescription('');
     onClose();
   };
 
@@ -202,118 +283,163 @@ export const ProjectFormModal: React.FC<ProjectFormModalProps> = ({
               <label className="block text-neutral-300 font-medium mb-1">
                 Client Brand *
               </label>
-              <select
-                required
-                value={clientId}
-                onChange={(e) => setClientId(e.target.value)}
-                className="w-full rounded-lg border border-neutral-800 bg-neutral-950 px-3 py-2 text-neutral-200 focus:border-amber-400 focus:outline-hidden"
-              >
-                {filteredClients.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.company_name}
-                  </option>
-                ))}
-              </select>
+              {filteredClients.length === 0 ? (
+                <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-2.5 text-xs text-amber-300 flex items-center gap-2">
+                  <AlertTriangle className="h-4 w-4 shrink-0 text-amber-400" />
+                  <span>No client brands found. Please add a client first.</span>
+                </div>
+              ) : (
+                <select
+                  required
+                  value={effectiveClientId}
+                  onChange={(e) => setClientId(e.target.value)}
+                  className="w-full rounded-lg border border-neutral-800 bg-neutral-950 px-3 py-2 text-neutral-200 focus:border-amber-400 focus:outline-hidden"
+                >
+                  {filteredClients.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.company_name}
+                    </option>
+                  ))}
+                </select>
+              )}
             </div>
             <div>
               <label className="block text-neutral-300 font-medium mb-1">
                 Lead Project Manager *
               </label>
-              <select
-                required
-                value={pmId}
-                onChange={(e) => setPmId(e.target.value)}
-                className="w-full rounded-lg border border-neutral-800 bg-neutral-950 px-3 py-2 text-neutral-200 focus:border-amber-400 focus:outline-hidden"
-              >
-                {profiles
-                  .filter((p) => p.role === 'project_manager' || p.role === 'super_admin')
-                  .map((p) => (
+              {availablePms.length === 0 ? (
+                <div className="rounded-lg border border-neutral-800 bg-neutral-950 px-3 py-2 text-neutral-400 text-xs">
+                  No staff profiles available
+                </div>
+              ) : (
+                <select
+                  required
+                  value={effectivePmId}
+                  onChange={(e) => setPmId(e.target.value)}
+                  className="w-full rounded-lg border border-neutral-800 bg-neutral-950 px-3 py-2 text-neutral-200 focus:border-amber-400 focus:outline-hidden"
+                >
+                  {availablePms.map((p) => (
                     <option key={p.id} value={p.id}>
-                      {p.full_name} ({p.role.replace('_', ' ')})
+                      {p.full_name} ({formatRoleTitle(p.role)})
                     </option>
                   ))}
-              </select>
+                </select>
+              )}
             </div>
           </div>
 
-          {/* DYNAMIC DELIVERABLE TARGETS BUILDER (Section 3 Requirement) */}
-          {projectType === 'monthly_retainer' && (
-            <div className="p-3.5 rounded-xl border border-amber-500/30 bg-amber-500/5 space-y-3">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="text-xs font-semibold text-amber-300">
-                    Monthly Deliverable Targets
-                  </h3>
-                  <p className="text-[11px] text-neutral-400">
-                    Define monthly target content quotas for this retainer (flexible for any content type)
-                  </p>
-                </div>
-                <span className="font-mono text-xs font-bold text-amber-400 bg-neutral-900 border border-neutral-800 px-2.5 py-1 rounded-md">
-                  Total Target: {totalMonthlyTarget}
-                </span>
+          {/* DYNAMIC DELIVERABLE TARGETS BUILDER (One-Time Projects & Monthly Retainers) */}
+          <div className="p-3.5 rounded-xl border border-amber-500/30 bg-amber-500/5 space-y-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div>
+                <h3 className="text-xs font-semibold text-amber-300 flex items-center gap-1.5">
+                  <FolderKanban className="h-3.5 w-3.5" />
+                  {projectType === 'monthly_retainer' ? 'Monthly Deliverable Targets' : 'Campaign Deliverable Targets'}
+                </h3>
+                <p className="text-[11px] text-neutral-400">
+                  {projectType === 'monthly_retainer'
+                    ? 'Define monthly target content quotas for this retainer (e.g. 4 Posts, 4 Reels per month)'
+                    : 'Specify how many posts, reels, or videos need to be published in this one-time project'}
+                </p>
               </div>
+              <span className="font-mono text-xs font-bold text-amber-400 bg-neutral-900 border border-neutral-800 px-2.5 py-1 rounded-md self-start sm:self-auto">
+                Total Scope: {totalTargets} Deliverable{totalTargets === 1 ? '' : 's'}
+              </span>
+            </div>
 
-              <div className="space-y-2">
-                {targets.map((row, idx) => (
-                  <div key={idx} className="flex items-center gap-2">
-                    <input
-                      type="text"
-                      value={row.label}
-                      onChange={(e) => handleTargetChange(idx, 'label', e.target.value)}
-                      placeholder="e.g. Posts, Reels, Stories..."
-                      className="flex-1 rounded-lg border border-neutral-800 bg-neutral-950 px-3 py-1.5 text-xs text-neutral-200 focus:border-amber-400"
-                    />
-
-                    <select
-                      value={row.content_type}
-                      onChange={(e) => handleTargetChange(idx, 'content_type', e.target.value)}
-                      className="w-32 rounded-lg border border-neutral-800 bg-neutral-950 px-2 py-1.5 text-xs text-neutral-300 focus:border-amber-400"
-                    >
-                      <option value="social_media_post">Post</option>
-                      <option value="reel">Reel</option>
-                      <option value="carousel">Carousel</option>
-                      <option value="video">Video</option>
-                      <option value="story">Story</option>
-                      <option value="advertisement">Ad</option>
-                      <option value="blog">Blog</option>
-                      <option value="other">Other</option>
-                    </select>
-
-                    <div className="flex items-center gap-1">
-                      <span className="text-[11px] text-neutral-500">Qty:</span>
-                      <input
-                        type="number"
-                        min="1"
-                        max="100"
-                        value={row.target_count}
-                        onChange={(e) => handleTargetChange(idx, 'target_count', parseInt(e.target.value) || 1)}
-                        className="w-16 rounded-lg border border-neutral-800 bg-neutral-950 px-2 py-1.5 text-xs font-mono text-center text-amber-400 font-bold focus:border-amber-400"
-                      />
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={() => handleRemoveTargetRow(idx)}
-                      disabled={targets.length <= 1}
-                      className="p-1.5 text-neutral-500 hover:text-rose-400 disabled:opacity-20"
-                      title="Remove row"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
-                  </div>
-                ))}
-              </div>
-
+            {/* Quick Presets */}
+            <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
+              <span className="text-[10px] text-neutral-500 font-medium">Quick Presets:</span>
               <button
                 type="button"
-                onClick={handleAddTargetRow}
-                className="text-xs text-amber-400 hover:underline flex items-center gap-1 font-medium"
+                onClick={() => setTargets([
+                  { content_type: 'social_media_post', label: 'Posts', target_count: 4 },
+                  { content_type: 'reel', label: 'Reels', target_count: 4 },
+                ])}
+                className="text-[10px] bg-neutral-900 hover:bg-neutral-800 text-neutral-300 border border-neutral-800 px-2 py-0.5 rounded transition-colors"
               >
-                <Plus className="h-3 w-3" />
-                <span>Add Deliverable Type Target</span>
+                4 Posts + 4 Reels
+              </button>
+              <button
+                type="button"
+                onClick={() => setTargets([
+                  { content_type: 'reel', label: 'Reels / Shorts', target_count: 6 },
+                  { content_type: 'video', label: 'Main Video', target_count: 1 },
+                ])}
+                className="text-[10px] bg-neutral-900 hover:bg-neutral-800 text-neutral-300 border border-neutral-800 px-2 py-0.5 rounded transition-colors"
+              >
+                6 Reels + 1 Video
+              </button>
+              <button
+                type="button"
+                onClick={() => setTargets([
+                  { content_type: 'social_media_post', label: 'Posts', target_count: 5 },
+                  { content_type: 'reel', label: 'Reels', target_count: 3 },
+                  { content_type: 'story', label: 'Stories', target_count: 6 },
+                ])}
+                className="text-[10px] bg-neutral-900 hover:bg-neutral-800 text-neutral-300 border border-neutral-800 px-2 py-0.5 rounded transition-colors"
+              >
+                Multi-Format
               </button>
             </div>
-          )}
+
+            <div className="space-y-2">
+              {targets.map((row, idx) => (
+                <div key={idx} className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={row.label}
+                    onChange={(e) => handleTargetChange(idx, 'label', e.target.value)}
+                    placeholder="e.g. Posts, Reels, Stories..."
+                    className="flex-1 rounded-lg border border-neutral-800 bg-neutral-950 px-3 py-1.5 text-xs text-neutral-200 focus:border-amber-400"
+                  />
+
+                  <select
+                    value={row.content_type}
+                    onChange={(e) => handleTargetChange(idx, 'content_type', e.target.value)}
+                    className="w-32 rounded-lg border border-neutral-800 bg-neutral-950 px-2 py-1.5 text-xs text-neutral-300 focus:border-amber-400"
+                  >
+                    {formatOptions.map((opt) => (
+                      <option key={opt.key} value={opt.key}>
+                        {opt.label}
+                      </option>
+                    ))}
+                  </select>
+
+                  <div className="flex items-center gap-1">
+                    <span className="text-[11px] text-neutral-500">Qty:</span>
+                    <input
+                      type="number"
+                      min="1"
+                      max="200"
+                      value={row.target_count}
+                      onChange={(e) => handleTargetChange(idx, 'target_count', parseInt(e.target.value) || 1)}
+                      className="w-16 rounded-lg border border-neutral-800 bg-neutral-950 px-2 py-1.5 text-xs font-mono text-center text-amber-400 font-bold focus:border-amber-400"
+                    />
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveTargetRow(idx)}
+                    disabled={targets.length <= 1}
+                    className="p-1.5 text-neutral-500 hover:text-rose-400 disabled:opacity-20"
+                    title="Remove row"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
+              ))}
+            </div>
+
+            <button
+              type="button"
+              onClick={handleAddTargetRow}
+              className="text-xs text-amber-400 hover:underline flex items-center gap-1 font-medium"
+            >
+              <Plus className="h-3 w-3" />
+              <span>Add Deliverable Type Target</span>
+            </button>
+          </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div>
@@ -323,10 +449,11 @@ export const ProjectFormModal: React.FC<ProjectFormModalProps> = ({
                 onChange={(e) => setPriority(e.target.value as Priority)}
                 className="w-full rounded-lg border border-neutral-800 bg-neutral-950 px-3 py-2 text-neutral-200 focus:border-amber-400 focus:outline-hidden"
               >
-                <option value="low">Low</option>
-                <option value="medium">Medium</option>
-                <option value="high">High</option>
-                <option value="urgent">Urgent</option>
+                {priorityOptions.map((opt) => (
+                  <option key={opt.key} value={opt.key}>
+                    {opt.label}
+                  </option>
+                ))}
               </select>
             </div>
             <div>
@@ -388,7 +515,7 @@ export const ProjectFormModal: React.FC<ProjectFormModalProps> = ({
                     />
                     <div>
                       <div className="font-semibold text-neutral-200">{user.full_name}</div>
-                      <div className="text-[10px] text-neutral-500 capitalize">{user.role.replace('_', ' ')}</div>
+                      <div className="text-[10px] text-neutral-400">{formatRoleTitle(user.role)}</div>
                     </div>
                   </label>
                 ))}
@@ -405,9 +532,10 @@ export const ProjectFormModal: React.FC<ProjectFormModalProps> = ({
             </button>
             <button
               type="submit"
-              className="rounded-lg bg-amber-400 px-4 py-2 font-semibold text-neutral-950 hover:bg-amber-300 transition-colors"
+              disabled={isSaving}
+              className="rounded-lg bg-amber-400 px-4 py-2 font-semibold text-neutral-950 hover:bg-amber-300 disabled:opacity-50 transition-colors"
             >
-              {projectType === 'monthly_retainer' ? 'Launch Monthly Retainer' : 'Launch Project'}
+              {isSaving ? 'Saving...' : projectType === 'monthly_retainer' ? 'Launch Monthly Retainer' : 'Launch Project'}
             </button>
           </div>
         </form>

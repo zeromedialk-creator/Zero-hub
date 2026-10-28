@@ -44,11 +44,11 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ onSelectProject, onS
   } = useData();
   const { role } = useAuth();
 
-  // Current viewed month (Defaulting to October 2026 based on campaign timeline)
-  const [currentDate, setCurrentDate] = useState(new Date(2026, 9, 1)); // October 2026
+  // Current viewed month
+  const [currentDate, setCurrentDate] = useState(new Date());
   const [viewMode, setViewMode] = useState<ViewMode>('month');
   const [displayMode, setDisplayMode] = useState<CalendarDisplayMode>('publishing');
-  const [selectedDay, setSelectedDay] = useState<number | null>(5);
+  const [selectedDay, setSelectedDay] = useState<number | null>(new Date().getDate());
   const [selectedProjectId, setSelectedProjectId] = useState<string>('all');
   const [selectedClientId, setSelectedClientId] = useState<string>('all');
   const [selectedPlatform, setSelectedPlatform] = useState<string>('all');
@@ -92,7 +92,10 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ onSelectProject, onS
   const filteredItems = filteredContentItems.filter((item) => {
     if (selectedClientId !== 'all' && item.client_id !== selectedClientId) return false;
     if (selectedProjectId !== 'all' && item.project_id !== selectedProjectId) return false;
-    if (selectedPlatform !== 'all' && item.platform !== selectedPlatform) return false;
+    if (selectedPlatform !== 'all') {
+      const plats = (item.platforms && item.platforms.length > 0) ? item.platforms : [item.platform];
+      if (!plats.includes(selectedPlatform as Platform)) return false;
+    }
     return true;
   });
 
